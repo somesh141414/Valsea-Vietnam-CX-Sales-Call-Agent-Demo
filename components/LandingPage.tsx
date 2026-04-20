@@ -70,6 +70,12 @@ const LANGUAGE_OPTIONS = [
   { label: 'Burmese (မြန်မာဘာသာ)', code: 'my' },
   { label: 'Khmer (ភាសាខ្មែរ)', code: 'km' },
   { label: 'Singlish 🇸🇬', code: 'sg-en' },
+  { label: 'Hindi (हिन्दी)', code: 'hi' },
+  { label: 'Punjabi (ਪੰਜਾਬੀ)', code: 'pa' },
+  { label: 'Bengali (বাংলা)', code: 'bn' },
+  { label: 'Telugu (తెలుగు)', code: 'te' },
+  { label: 'Marathi (मराठी)', code: 'mr' },
+  { label: 'Kannada (ಕನ್ನಡ)', code: 'kn' },
 ] as const;
 
 // Validate that NEXT_PUBLIC env vars were baked into the bundle at Vercel build time.

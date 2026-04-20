@@ -234,6 +234,30 @@ const LANGUAGE_CONFIG: Record<string, { voiceId: string; instruction: string }> 
     // Singlish is a creole — instruct the LLM to mimic its characteristic style
     instruction: 'Always respond in Singlish (Singaporean English creole). Use characteristic Singlish features: sentence-final particles like "lah", "leh", "lor", "meh", "sia", "can?"; direct grammar influenced by Malay and Hokkien; and a casual, friendly tone. For example: "Can do one lah, no worries!" or "Wah, that one very good leh."',
   },
+  hi: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Hindi (हिन्दी), regardless of what language the user speaks.',
+  },
+  pa: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Punjabi (ਪੰਜਾਬੀ), regardless of what language the user speaks.',
+  },
+  bn: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Bengali (বাংলা), regardless of what language the user speaks.',
+  },
+  te: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Telugu (తెలుగు), regardless of what language the user speaks.',
+  },
+  mr: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Marathi (मराठी), regardless of what language the user speaks.',
+  },
+  kn: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Kannada (ಕನ್ನಡ), regardless of what language the user speaks.',
+  },
 };
 
 function requireEnv(name: string): string {
