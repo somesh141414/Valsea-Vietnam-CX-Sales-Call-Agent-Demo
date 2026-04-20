@@ -77,8 +77,21 @@ const LANGUAGE_OPTIONS = [
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 
 export default function LandingPage() {
+  // All hooks must be declared before any conditional return (Rules of Hooks).
   const [showConversation, setShowConversation] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('vi');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [agoraData, setAgoraData] = useState<AgoraTokenData | null>(null);
+  const [rtmClient, setRtmClient] = useState<RTMClient | null>(null);
+  const [agentJoinError, setAgentJoinError] = useState(false);
+
+  // Preload heavy modules on mount so they're already cached when the user
+  // clicks "Try it now!" — eliminates the ~1.8s dynamic-import delay.
+  useEffect(() => {
+    import('agora-rtc-react').catch(() => {});
+    import('agora-rtm').catch(() => {});
+  }, []);
 
   // Guard: if NEXT_PUBLIC_AGORA_APP_ID is missing, the Agora SDK will crash with an
   // unhelpful error. Show a clear message instead so the cause is obvious.
@@ -96,18 +109,6 @@ export default function LandingPage() {
       </div>
     );
   }
-
-  // Preload heavy modules on mount so they're already cached when the user
-  // clicks "Try it now!" — eliminates the ~1.8s dynamic-import delay.
-  useEffect(() => {
-    import('agora-rtc-react').catch(() => {});
-    import('agora-rtm').catch(() => {});
-  }, []);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [agoraData, setAgoraData] = useState<AgoraTokenData | null>(null);
-  const [rtmClient, setRtmClient] = useState<RTMClient | null>(null);
-  const [agentJoinError, setAgentJoinError] = useState(false);
 
   const handleStartConversation = async () => {
     setIsLoading(true);

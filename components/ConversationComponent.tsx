@@ -234,7 +234,7 @@ export default function ConversationComponent({
     return () => { rtmClient.removeEventListener('message', handleRtmMessage); };
   }, [rtmClient, addConnectionIssue]);
 
-  const transcript = useMemo(() => normalizeTranscript(rawTranscript, String(client.uid)), [rawTranscript, client.uid]);
+  const transcript = useMemo(() => normalizeTranscript(rawTranscript, client?.uid != null ? String(client.uid) : ''), [rawTranscript, client?.uid]);
   const messageList = useMemo(() => getMessageList(transcript), [transcript]);
   const currentInProgressMessage = useMemo(() => getCurrentInProgressMessage(transcript), [transcript]);
 
