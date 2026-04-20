@@ -72,9 +72,30 @@ const LANGUAGE_OPTIONS = [
   { label: 'Singlish 🇸🇬', code: 'sg-en' },
 ] as const;
 
+// Validate that NEXT_PUBLIC env vars were baked into the bundle at Vercel build time.
+// If they're missing the Agora SDK will throw an opaque error; this surfaces it clearly.
+const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
+
 export default function LandingPage() {
   const [showConversation, setShowConversation] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('vi');
+
+  // Guard: if NEXT_PUBLIC_AGORA_APP_ID is missing, the Agora SDK will crash with an
+  // unhelpful error. Show a clear message instead so the cause is obvious.
+  if (!AGORA_APP_ID) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground gap-4 p-8 text-center">
+        <h2 className="text-lg font-semibold text-destructive">Configuration Error</h2>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          <code className="font-mono bg-muted px-1 rounded">NEXT_PUBLIC_AGORA_APP_ID</code> is
+          not set. Add it to your Vercel Environment Variables and{' '}
+          <strong>redeploy</strong> — Vercel must rebuild the bundle for{' '}
+          <code className="font-mono bg-muted px-1 rounded">NEXT_PUBLIC_*</code> vars to take
+          effect.
+        </p>
+      </div>
+    );
+  }
 
   // Preload heavy modules on mount so they're already cached when the user
   // clicks "Try it now!" — eliminates the ~1.8s dynamic-import delay.

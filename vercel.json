@@ -8,6 +8,11 @@
   "env": {
     "NEXT_PUBLIC_VERCEL_URL": "${VERCEL_URL}"
   },
+  "functions": {
+    "app/api/**": {
+      "maxDuration": 30
+    }
+  },
   "github": {
     "silent": true,
     "autoAlias": true
