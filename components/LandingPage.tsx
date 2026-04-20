@@ -54,8 +54,27 @@ const AgoraProvider = dynamic(
   { ssr: false },
 );
 
+const LANGUAGE_OPTIONS = [
+  { label: 'Vietnamese (Tiếng Việt)', code: 'vi' },
+  { label: 'English', code: 'en' },
+  { label: 'Chinese (中文)', code: 'zh' },
+  { label: 'Japanese (日本語)', code: 'ja' },
+  { label: 'Korean (한국어)', code: 'ko' },
+  { label: 'French (Français)', code: 'fr' },
+  { label: 'Spanish (Español)', code: 'es' },
+  { label: 'Indonesian (Bahasa Indonesia)', code: 'id' },
+  { label: 'Malay (Bahasa Melayu)', code: 'ms' },
+  { label: 'Thai (ภาษาไทย)', code: 'th' },
+  { label: 'Filipino (Tagalog)', code: 'tl' },
+  { label: 'Tamil (தமிழ்)', code: 'ta' },
+  { label: 'Burmese (မြန်မာဘာသာ)', code: 'my' },
+  { label: 'Khmer (ភាសាខ្មែរ)', code: 'km' },
+  { label: 'Singlish 🇸🇬', code: 'sg-en' },
+] as const;
+
 export default function LandingPage() {
   const [showConversation, setShowConversation] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('vi');
 
   // Preload heavy modules on mount so they're already cached when the user
   // clicks "Try it now!" — eliminates the ~1.8s dynamic-import delay.
@@ -98,6 +117,7 @@ export default function LandingPage() {
           body: JSON.stringify({
             requester_id: responseData.uid,
             channel_name: responseData.channel,
+            languageCode: selectedLanguage,
           } as ClientStartRequest),
         })
           .then(async (res) => {
@@ -230,6 +250,26 @@ export default function LandingPage() {
 
           {!showConversation ? (
             <>
+              {/* Language selector — controls what language the agent speaks */}
+              <div className="flex flex-col items-start gap-1 w-56 animate-fade-up animate-fade-up-d1">
+                <label htmlFor="language-select" className="text-xs text-muted-foreground">
+                  Agent language
+                </label>
+                <select
+                  id="language-select"
+                  value={selectedLanguage}
+                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  disabled={isLoading}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {LANGUAGE_OPTIONS.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Entry CTA: starts token fetch, agent invite, and RTM setup for a new session. */}
               <Button
                 onClick={handleStartConversation}

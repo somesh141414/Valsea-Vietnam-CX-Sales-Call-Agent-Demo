@@ -3,6 +3,7 @@ import {
   AgoraClient,
   Agent,
   Area,
+  BaseSTT,
   ExpiresIn,
   MiniMaxTTS,
   OpenAI,
@@ -44,18 +45,87 @@ const GREETING =
 // agentUid identifies the AI in the RTC channel — must match NEXT_PUBLIC_AGENT_UID on the client
 const agentUid = process.env.NEXT_PUBLIC_AGENT_UID ?? String(DEFAULT_AGENT_UID);
 
+// Language → { voiceId, instruction }
+// voiceId: MiniMax speech_2_6_turbo is multilingual — the same voice speaks any language
+//          when the LLM outputs text in that language. Update voice IDs here if you have
+//          language-specific MiniMax voices available on your account.
+const LANGUAGE_CONFIG: Record<string, { voiceId: string; instruction: string }> = {
+  en: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in English, regardless of what language the user speaks.',
+  },
+  vi: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Vietnamese (Tiếng Việt), regardless of what language the user speaks.',
+  },
+  zh: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Mandarin Chinese (普通话), regardless of what language the user speaks.',
+  },
+  ja: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Japanese (日本語), regardless of what language the user speaks.',
+  },
+  ko: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Korean (한국어), regardless of what language the user speaks.',
+  },
+  fr: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in French (Français), regardless of what language the user speaks.',
+  },
+  es: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Spanish (Español), regardless of what language the user speaks.',
+  },
+  id: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Indonesian (Bahasa Indonesia), regardless of what language the user speaks.',
+  },
+  ms: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Malay (Bahasa Melayu), regardless of what language the user speaks.',
+  },
+  th: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Thai (ภาษาไทย), regardless of what language the user speaks.',
+  },
+  tl: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Filipino (Tagalog), regardless of what language the user speaks.',
+  },
+  ta: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Tamil (தமிழ்), regardless of what language the user speaks.',
+  },
+  my: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Burmese (မြန်မာဘာသာ), regardless of what language the user speaks.',
+  },
+  km: {
+    voiceId: 'English_captivating_female1',
+    instruction: 'Always respond in Khmer (ភាសាខ្មែរ), regardless of what language the user speaks.',
+  },
+  'sg-en': {
+    voiceId: 'English_captivating_female1',
+    // Singlish is a creole — instruct the LLM to mimic its characteristic style
+    instruction: 'Always respond in Singlish (Singaporean English creole). Use characteristic Singlish features: sentence-final particles like "lah", "leh", "lor", "meh", "sia", "can?"; direct grammar influenced by Malay and Hokkien; and a casual, friendly tone. For example: "Can do one lah, no worries!" or "Wah, that one very good leh."',
+  },
+};
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
 }
 
-// Custom Valsea STT wrapper — mimics SDK vendor interface
-class ValseasTT {
+// Custom Valsea STT wrapper — 'valsea' is a backend-only vendor not yet in the SDK types,
+// so we cast through unknown to satisfy the SttConfig discriminated union.
+class ValseasTT extends BaseSTT {
   toConfig() {
     return {
       vendor: 'valsea',
-      language: 'vietnamese',
+      language: 'vi-VN',
       params: {
         uri: 'wss://api.valsea.ai/v1/realtime',
         auth_mode: 'header',
@@ -65,8 +135,9 @@ class ValseasTT {
         sample_rate: 16000,
         model: 'valsea-rtt',
         enable_correction: true,
+        language: "chinese",
       },
-    };
+    } as unknown as ReturnType<BaseSTT['toConfig']>;
   }
 }
 
@@ -75,7 +146,8 @@ export async function POST(request: NextRequest) {
     // --- 1. Parse request ---
 
     const body: ClientStartRequest = await request.json();
-    const { requester_id, channel_name } = body;
+    const { requester_id, channel_name, languageCode = 'vi' } = body;
+    const lang = LANGUAGE_CONFIG[languageCode] ?? LANGUAGE_CONFIG['vi'];
 
     // Validate required env vars on first request so misconfiguration surfaces
     // with a clear error message rather than a silent failure.
@@ -101,24 +173,24 @@ export async function POST(request: NextRequest) {
     // Pipeline: Valsea (custom) STT → OpenAI (reseller) LLM → MiniMax (reseller) TTS.
     const agent = new Agent({
       name: `conversation-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-      instructions: ADA_PROMPT,
+      instructions: `${ADA_PROMPT}\n\n# Language\n${lang.instruction}`,
       greeting: GREETING,
       failureMessage: 'Please wait a moment.',
       maxHistory: 50,
       turnDetection: {
         config: {
-          speech_threshold: 0.3,
+          speech_threshold: 0.5,
           start_of_speech: {
             mode: 'vad',
             vad_config: {
-              interrupt_duration_ms: 200,
-              prefix_padding_ms: 500,
+              interrupt_duration_ms: 160,
+              prefix_padding_ms: 300,
             },
           },
           end_of_speech: {
             mode: 'vad',
             vad_config: {
-              silence_duration_ms: 800,
+              silence_duration_ms: 480,
             },
           },
         },
@@ -126,7 +198,7 @@ export async function POST(request: NextRequest) {
       advancedFeatures: { enable_rtm: true, enable_tools: true },
       parameters: { data_channel: 'rtm', enable_error_message: true },
     })
-      .withStt(new ValseasTT() as any)
+      .withStt(new ValseasTT())
       .withLlm(
         new OpenAI({
           model: 'gpt-4o-mini',
@@ -143,7 +215,7 @@ export async function POST(request: NextRequest) {
       .withTts(
         new MiniMaxTTS({
           model: 'speech_2_6_turbo',
-          voiceId: 'English_captivating_female1',
+          voiceId: lang.voiceId,
         }),
       );
 
