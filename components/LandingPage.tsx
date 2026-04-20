@@ -235,16 +235,16 @@ export default function LandingPage() {
       />
 
       {/* Hero shell: either shows the pre-call CTA or swaps in the live conversation experience. */}
-      <div className="flex-1 flex flex-col items-center justify-center">
-        <div className="z-10 text-center flex flex-col items-center gap-4">
+      <div className={`flex-1 flex flex-col items-center ${showConversation ? 'justify-start pt-4 overflow-y-auto pb-8' : 'justify-center'}`}>
+        <div className={`z-10 text-center flex flex-col items-center gap-4 ${showConversation ? 'w-full max-w-xl' : ''}`}>
           <h1 className="text-xl font-semibold animate-fade-up">
-            Voice AI Quickstart
+            Coca-Cola Customer Support
           </h1>
 
           {!showConversation && (
             <p className="text-sm text-muted-foreground animate-fade-up animate-fade-up-d1">
-              Experience the power of <br className="sm:hidden" />
-              Agora&apos;s Conversational AI Engine.
+              Ask Maya about bundle promotions, <br className="sm:hidden" />
+              bulk delivery, and more.
             </p>
           )}
 

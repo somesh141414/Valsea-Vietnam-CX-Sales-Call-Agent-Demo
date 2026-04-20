@@ -8,9 +8,9 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Talk to an AI today, with Agora Conversational AI Engine!',
+  title: 'Coca-Cola Customer Support — Talk to Maya',
   description:
-    "A voice first AI web-app powered by Agora's Conversational AI Engine. The easiest way to add voice to your LLM, without deploying new infrastructure.",
+    'Ask about Coca-Cola bundle promotions, bulk delivery, and frequently asked questions — powered by a voice AI agent.',
   icons: {
     icon: [
       { url: '/favicon.ico' },
