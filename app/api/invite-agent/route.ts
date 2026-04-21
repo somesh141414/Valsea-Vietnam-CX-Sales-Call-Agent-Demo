@@ -56,11 +56,9 @@ Use this privately to decide how to guide the conversation.
 ---
 
 # OPENING SCRIPT
-Use this greeting:
-"Hi there! You've reached Coca-Cola Customer Support. I'm Maya. How can I help you today?"
+Open with the localized greeting specified in the # Language section at the end of these instructions.
 
-If the customer is unsure or silent:
-"Take your time! I'm here to help with promotions, bulk orders, deliveries — whatever you need."
+If the customer is unsure or silent, acknowledge warmly in the same language and offer to help with promotions, bulk orders, or deliveries.
 
 ---
 
@@ -160,103 +158,119 @@ If no action taken:
 // Keep backward-compatible alias so the rest of the file doesn't need changes.
 const ADA_PROMPT = SYSTEM_PROMPT;
 
-// First thing the agent says when a user joins the channel.
-const GREETING =
-  process.env.NEXT_AGENT_GREETING ??
-  `Hi there! You've reached Coca-Cola Customer Support. I'm Maya. How can I help you today?`;
-
 // agentUid identifies the AI in the RTC channel — must match NEXT_PUBLIC_AGENT_UID on the client
 const agentUid = process.env.NEXT_PUBLIC_AGENT_UID ?? String(DEFAULT_AGENT_UID);
 
-// Language → { voiceId, instruction }
-// voiceId: MiniMax speech_2_6_turbo is multilingual — the same voice speaks any language
+// Language → { voiceId, instruction, greeting }
+// voiceId: MiniMax speech-2.8-turbo is multilingual — the same voice speaks any language
 //          when the LLM outputs text in that language. Update voice IDs here if you have
 //          language-specific MiniMax voices available on your account.
-const LANGUAGE_CONFIG: Record<string, { voiceId: string; instruction: string }> = {
+const LANGUAGE_CONFIG: Record<string, { voiceId: string; instruction: string; greeting: string }> = {
   en: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in English, regardless of what language the user speaks.',
+    greeting: "Hi there! You've reached Coca-Cola Customer Support. I'm Maya. How can I help you today?",
   },
   vi: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Vietnamese (Tiếng Việt), regardless of what language the user speaks.',
+    greeting: 'Xin chào! Đây là bộ phận Hỗ trợ Khách hàng Coca-Cola. Tôi là Maya. Tôi có thể giúp gì cho bạn hôm nay?',
   },
   zh: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Mandarin Chinese (普通话), regardless of what language the user speaks.',
+    greeting: '您好！这里是可口可乐客户服务中心。我是Maya。今天有什么可以帮您的吗？',
   },
   ja: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Japanese (日本語), regardless of what language the user speaks.',
+    greeting: 'こんにちは！コカ・コーラのカスタマーサポートです。私はMayaと申します。本日はどのようなご用件でしょうか？',
   },
   ko: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Korean (한국어), regardless of what language the user speaks.',
+    greeting: '안녕하세요! 코카콜라 고객 지원센터입니다. 저는 Maya입니다. 오늘 어떻게 도와드릴까요?',
   },
   fr: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in French (Français), regardless of what language the user speaks.',
+    greeting: 'Bonjour ! Vous avez joint le Service Client Coca-Cola. Je suis Maya. Comment puis-je vous aider aujourd\'hui ?',
   },
   es: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Spanish (Español), regardless of what language the user speaks.',
+    greeting: '¡Hola! Ha llegado al Servicio de Atención al Cliente de Coca-Cola. Soy Maya. ¿En qué puedo ayudarle hoy?',
   },
   id: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Indonesian (Bahasa Indonesia), regardless of what language the user speaks.',
+    greeting: 'Halo! Anda telah terhubung dengan Layanan Pelanggan Coca-Cola. Saya Maya. Ada yang bisa saya bantu hari ini?',
   },
   ms: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Malay (Bahasa Melayu), regardless of what language the user speaks.',
+    greeting: 'Helo! Anda telah menghubungi Khidmat Pelanggan Coca-Cola. Saya Maya. Boleh saya bantu anda hari ini?',
   },
   th: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Thai (ภาษาไทย), regardless of what language the user speaks.',
+    greeting: 'สวัสดีค่ะ! นี่คือฝ่ายบริการลูกค้า Coca-Cola ค่ะ ฉันชื่อ Maya ค่ะ วันนี้ช่วยอะไรคุณได้บ้างคะ?',
   },
   tl: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Filipino (Tagalog), regardless of what language the user speaks.',
+    greeting: 'Kumusta! Nakarating kayo sa Customer Support ng Coca-Cola. Ako si Maya. Paano kita matutulungan ngayon?',
   },
   ta: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Tamil (தமிழ்), regardless of what language the user speaks.',
+    greeting: 'வணக்கம்! நீங்கள் Coca-Cola வாடிக்கையாளர் சேவையை அடைந்துவிட்டீர்கள். நான் Maya. இன்று உங்களுக்கு எவ்வாறு உதவ முடியும்?',
   },
   my: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Burmese (မြန်မာဘာသာ), regardless of what language the user speaks.',
+    greeting: 'မင်္ဂလာပါ! Coca-Cola ဖောက်သည်ဝန်ဆောင်မှုသို့ ကြိုဆိုပါသည်။ ကျွန်မ Maya ပါ။ ဒီနေ့ ဘာကူညီပေးရမလဲ?',
   },
   km: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Khmer (ភាសាខ្មែរ), regardless of what language the user speaks.',
+    greeting: 'សួស្ដី! អ្នកបានទាក់ទងមកផ្នែកគាំទ្រអតិថិជន Coca-Cola ។ ខ្ញុំឈ្មោះ Maya ។ ថ្ងៃនេះខ្ញុំអាចជួយអ្នកអ្វីបាន?',
   },
   'sg-en': {
     voiceId: 'English_captivating_female1',
     // Singlish is a creole — instruct the LLM to mimic its characteristic style
     instruction: 'Always respond in Singlish (Singaporean English creole). Use characteristic Singlish features: sentence-final particles like "lah", "leh", "lor", "meh", "sia", "can?"; direct grammar influenced by Malay and Hokkien; and a casual, friendly tone. For example: "Can do one lah, no worries!" or "Wah, that one very good leh."',
+    greeting: "Hey there lah! You've reached Coca-Cola Customer Support. I'm Maya. How can I help you today?",
   },
   hi: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Hindi (हिन्दी), regardless of what language the user speaks.',
+    greeting: 'नमस्ते! आप Coca-Cola के ग्राहक सेवा से जुड़े हैं। मैं Maya हूँ। आज मैं आपकी कैसे मदद कर सकती हूँ?',
   },
   pa: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Punjabi (ਪੰਜਾਬੀ), regardless of what language the user speaks.',
+    greeting: 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਤੁਸੀਂ Coca-Cola ਦੀ ਗਾਹਕ ਸੇਵਾ ਨਾਲ ਜੁੜੇ ਹੋ। ਮੈਂ Maya ਹਾਂ। ਅੱਜ ਮੈਂ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦੀ ਹਾਂ?',
   },
   bn: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Bengali (বাংলা), regardless of what language the user speaks.',
+    greeting: 'নমস্কার! আপনি Coca-Cola গ্রাহক সেবায় যোগাযোগ করেছেন। আমি Maya। আজ আপনাকে কীভাবে সাহায্য করতে পারি?',
   },
   te: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Telugu (తెలుగు), regardless of what language the user speaks.',
+    greeting: 'నమస్కారం! మీరు Coca-Cola కస్టమర్ సపోర్ట్‌కు చేరుకున్నారు. నేను Maya. ఈరోజు మీకు ఎలా సహాయం చేయగలను?',
   },
   mr: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Marathi (मराठी), regardless of what language the user speaks.',
+    greeting: 'नमस्कार! तुम्ही Coca-Cola च्या ग्राहक सेवेशी जोडले गेले आहात. मी Maya आहे. आज मी तुम्हाला कशी मदद करू शकते?',
   },
   kn: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Kannada (ಕನ್ನಡ), regardless of what language the user speaks.',
+    greeting: 'ನಮಸ್ಕಾರ! ನೀವು Coca-Cola ಗ್ರಾಹಕ ಸೇವೆಯನ್ನು ತಲುಪಿದ್ದೀರಿ. ನಾನು Maya. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?',
   },
 };
 
@@ -295,6 +309,7 @@ export async function POST(request: NextRequest) {
     const body: ClientStartRequest = await request.json();
     const { requester_id, channel_name, languageCode = 'vi' } = body;
     const lang = LANGUAGE_CONFIG[languageCode] ?? LANGUAGE_CONFIG['vi'];
+    const greeting = process.env.NEXT_AGENT_GREETING ?? lang.greeting;
 
     // Validate required env vars on first request so misconfiguration surfaces
     // with a clear error message rather than a silent failure.
@@ -317,11 +332,16 @@ export async function POST(request: NextRequest) {
       appCertificate,
     });
 
-    // Pipeline: Valsea (custom) STT → OpenAI (reseller) LLM → MiniMax (reseller) TTS.
+    const tts = new MiniMaxTTS({
+      model: 'speech_2_8_turbo',
+      voiceId: lang.voiceId,
+    });
+
+    // Pipeline: Valsea (custom) STT → OpenAI (reseller) LLM → MiniMax TTS.
     const agent = new Agent({
       name: `conversation-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       instructions: `${ADA_PROMPT}\n\n# Language\n${lang.instruction}`,
-      greeting: GREETING,
+      greeting: greeting,
       failureMessage: 'Please wait a moment.',
       maxHistory: 50,
       turnDetection: {
@@ -349,7 +369,7 @@ export async function POST(request: NextRequest) {
       .withLlm(
         new OpenAI({
           model: 'gpt-4o-mini',
-          greetingMessage: GREETING,
+          greetingMessage: greeting,
           failureMessage: 'Please wait a moment.',
           maxHistory: 15,
           params: {
@@ -359,12 +379,7 @@ export async function POST(request: NextRequest) {
           },
         }),
       )
-      .withTts(
-        new MiniMaxTTS({
-          model: 'speech_2_6_turbo',
-          voiceId: lang.voiceId,
-        }),
-      );
+      .withTts(tts);
 
     // remoteUids restricts the agent to only process audio from this user
     const session = agent.createSession(client, {

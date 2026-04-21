@@ -10,44 +10,23 @@ import type {
   AgentResponse,
   AgoraRenewalTokens,
 } from '../types/conversation';
-import { Button } from '@/components/ui/button';
 import { ErrorBoundary } from './ErrorBoundary';
 import { LoadingSkeleton } from './LoadingSkeleton';
 
-// Dynamically import the ConversationComponent with ssr disabled
 const ConversationComponent = dynamic(() => import('./ConversationComponent'), {
   ssr: false,
 });
 
-// Dynamically import AgoraRTCProvider (browser-only).
-// The AgoraVoiceAI toolkit is initialized inside ConversationComponent after
-// the RTC join succeeds, so this wrapper only needs to provide the RTC client.
 const AgoraProvider = dynamic(
   async () => {
-    const { AgoraRTCProvider, default: AgoraRTC } =
-      await import('agora-rtc-react');
+    const { AgoraRTCProvider, default: AgoraRTC } = await import('agora-rtc-react');
     return {
-      default: function AgoraProviders({
-        children,
-      }: {
-        children: React.ReactNode;
-      }) {
-        // useRef persists across StrictMode's simulated unmount/remount, so only
-        // one RTC client is ever created per session (useMemo creates two in StrictMode).
-        const clientRef = useRef<ReturnType<
-          typeof AgoraRTC.createClient
-        > | null>(null);
+      default: function AgoraProviders({ children }: { children: React.ReactNode }) {
+        const clientRef = useRef<ReturnType<typeof AgoraRTC.createClient> | null>(null);
         if (!clientRef.current) {
-          clientRef.current = AgoraRTC.createClient({
-            mode: 'rtc',
-            codec: 'vp8',
-          });
+          clientRef.current = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
         }
-        return (
-          <AgoraRTCProvider client={clientRef.current}>
-            {children}
-          </AgoraRTCProvider>
-        );
+        return <AgoraRTCProvider client={clientRef.current}>{children}</AgoraRTCProvider>;
       },
     };
   },
@@ -78,12 +57,10 @@ const LANGUAGE_OPTIONS = [
   { label: 'Kannada (ಕನ್ನಡ)', code: 'kn' },
 ] as const;
 
-// Validate that NEXT_PUBLIC env vars were baked into the bundle at Vercel build time.
-// If they're missing the Agora SDK will throw an opaque error; this surfaces it clearly.
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 
 export default function LandingPage() {
-  // All hooks must be declared before any conditional return (Rules of Hooks).
+  // ─── All hooks must be declared before any conditional return ────────────
   const [showConversation, setShowConversation] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('vi');
   const [isLoading, setIsLoading] = useState(false);
@@ -92,25 +69,39 @@ export default function LandingPage() {
   const [rtmClient, setRtmClient] = useState<RTMClient | null>(null);
   const [agentJoinError, setAgentJoinError] = useState(false);
 
-  // Preload heavy modules on mount so they're already cached when the user
-  // clicks "Try it now!" — eliminates the ~1.8s dynamic-import delay.
   useEffect(() => {
     import('agora-rtc-react').catch(() => {});
     import('agora-rtm').catch(() => {});
   }, []);
 
-  // Guard: if NEXT_PUBLIC_AGORA_APP_ID is missing, the Agora SDK will crash with an
-  // unhelpful error. Show a clear message instead so the cause is obvious.
+  const handleTokenWillExpire = useCallback(
+    async (uid: string): Promise<AgoraRenewalTokens> => {
+      try {
+        const channel = agoraData?.channel;
+        if (!channel) throw new Error('Missing channel for token renewal');
+        const [rtcResponse, rtmResponse] = await Promise.all([
+          fetch(`/api/generate-agora-token?channel=${channel}&uid=${uid}`),
+          fetch(`/api/generate-agora-token?channel=${channel}&uid=0`),
+        ]);
+        const [rtcData, rtmData] = await Promise.all([rtcResponse.json(), rtmResponse.json()]);
+        if (!rtcResponse.ok || !rtmResponse.ok) throw new Error('Failed to generate renewal tokens');
+        return { rtcToken: rtcData.token, rtmToken: rtmData.token };
+      } catch (error) {
+        console.error('Error renewing token:', error);
+        throw error;
+      }
+    },
+    [agoraData],
+  );
+
+  // ─── Config guard ────────────────────────────────────────────────────────
   if (!AGORA_APP_ID) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground gap-4 p-8 text-center">
-        <h2 className="text-lg font-semibold text-destructive">Configuration Error</h2>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          <code className="font-mono bg-muted px-1 rounded">NEXT_PUBLIC_AGORA_APP_ID</code> is
-          not set. Add it to your Vercel Environment Variables and{' '}
-          <strong>redeploy</strong> — Vercel must rebuild the bundle for{' '}
-          <code className="font-mono bg-muted px-1 rounded">NEXT_PUBLIC_*</code> vars to take
-          effect.
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#080808] text-white gap-4 p-8 text-center">
+        <h2 className="text-lg font-semibold text-red-400">Configuration Error</h2>
+        <p className="text-sm text-white/50 max-w-sm">
+          <code className="font-mono bg-white/10 px-1 rounded">NEXT_PUBLIC_AGORA_APP_ID</code> is
+          not set. Add it to your environment and <strong>restart</strong>.
         </p>
       </div>
     );
@@ -120,25 +111,13 @@ export default function LandingPage() {
     setIsLoading(true);
     setError(null);
     setAgentJoinError(false);
-
     try {
-      // 1. Fetch RTC token + channel
-      // console.log('Fetching Agora token...');
       const agoraResponse = await fetch('/api/generate-agora-token');
       const responseData = await agoraResponse.json();
-      // console.log('Agora token response: uid =', responseData.uid, 'channel =', responseData.channel);
-
       if (!agoraResponse.ok) {
-        throw new Error(
-          `Failed to generate Agora token: ${JSON.stringify(responseData)}`,
-        );
+        throw new Error(`Failed to generate Agora token: ${JSON.stringify(responseData)}`);
       }
-
-      // 2. Run agent invite and RTM setup in parallel — both only need the token response.
-      //    RTM must be ready before ConversationComponent mounts so AgoraVoiceAI
-      //    can subscribe immediately. Agent invite is non-fatal.
       const [agentData, rtm] = await Promise.all([
-        // 2a. Start the AI agent
         fetch('/api/invite-agent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -149,10 +128,7 @@ export default function LandingPage() {
           } as ClientStartRequest),
         })
           .then(async (res) => {
-            if (!res.ok) {
-              setAgentJoinError(true);
-              return null;
-            }
+            if (!res.ok) { setAgentJoinError(true); return null; }
             return res.json() as Promise<AgentResponse>;
           })
           .catch((err) => {
@@ -160,8 +136,6 @@ export default function LandingPage() {
             setAgentJoinError(true);
             return null;
           }),
-
-        // 2b. Set up RTM (dynamically imported to keep it client-only)
         (async () => {
           const { default: AgoraRTM } = await import('agora-rtm');
           const rtm: RTMClient = new AgoraRTM.RTM(
@@ -170,12 +144,9 @@ export default function LandingPage() {
           );
           await rtm.login({ token: responseData.token });
           await rtm.subscribe(responseData.channel);
-          // console.log('RTM ready, channel:', responseData.channel);
           return rtm;
         })(),
       ]);
-
-      // 3. All dependencies ready — store state and show conversation
       setRtmClient(rtm);
       setAgoraData({ ...responseData, agentId: agentData?.agent_id });
       setShowConversation(true);
@@ -187,193 +158,115 @@ export default function LandingPage() {
     }
   };
 
-  const handleTokenWillExpire = useCallback(
-    async (uid: string): Promise<AgoraRenewalTokens> => {
-      try {
-        const channel = agoraData?.channel;
-        if (!channel) {
-          throw new Error('Missing channel for token renewal');
-        }
-
-        // RTC and RTM tokens are renewed independently:
-        //   - RTC uses the browser client's assigned UID (passed in from ConversationComponent).
-        //   - RTM uses uid=0 because buildTokenWithRtm embeds RTM capability by AppID+channel,
-        //     not by a specific RTM userId — so uid=0 is valid for any RTM client instance.
-        // Both are fetched in parallel to stay within the token-expiry grace-period window.
-        const [rtcResponse, rtmResponse] = await Promise.all([
-          fetch(`/api/generate-agora-token?channel=${channel}&uid=${uid}`),
-          fetch(`/api/generate-agora-token?channel=${channel}&uid=0`),
-        ]);
-        const [rtcData, rtmData] = await Promise.all([
-          rtcResponse.json(),
-          rtmResponse.json(),
-        ]);
-
-        if (!rtcResponse.ok || !rtmResponse.ok) {
-          throw new Error('Failed to generate renewal tokens');
-        }
-
-        return {
-          rtcToken: rtcData.token,
-          rtmToken: rtmData.token,
-        };
-      } catch (error) {
-        console.error('Error renewing token:', error);
-        throw error;
-      }
-    },
-    [agoraData],
-  );
-
   const handleEndConversation = async () => {
-    // Stop the AI agent
     if (agoraData?.agentId) {
       try {
-        // console.log('Stopping agent:', agoraData.agentId);
         const response = await fetch('/api/stop-conversation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ agent_id: agoraData.agentId }),
         });
-        if (!response.ok) {
-          console.error('Failed to stop agent:', await response.text());
-        }
-        // else console.log('Agent stopped successfully');
+        if (!response.ok) console.error('Failed to stop agent:', await response.text());
       } catch (error) {
         console.error('Error stopping agent:', error);
       }
     }
-
-    // Tear down RTM — owned here since we created it here
     rtmClient?.logout().catch((err) => console.error('RTM logout error:', err));
     setRtmClient(null);
     setShowConversation(false);
   };
 
+  // ─── Active conversation: full-screen ────────────────────────────────────
+  if (showConversation && agoraData && rtmClient) {
+    return (
+      <div className="relative">
+        {agentJoinError && (
+          <div className="absolute top-14 left-0 right-0 z-50 bg-red-900/80 text-red-200 text-xs text-center py-1.5 px-4 border-b border-red-800/60">
+            Agent connection failed — conversation may not work as expected.
+          </div>
+        )}
+        <Suspense fallback={<LoadingSkeleton />}>
+          <ErrorBoundary>
+            <AgoraProvider>
+              <ConversationComponent
+                agoraData={agoraData}
+                rtmClient={rtmClient}
+                onTokenWillExpire={handleTokenWillExpire}
+                onEndConversation={handleEndConversation}
+                selectedLanguage={selectedLanguage}
+              />
+            </AgoraProvider>
+          </ErrorBoundary>
+        </Suspense>
+      </div>
+    );
+  }
+
+  // ─── Pre-call landing page ────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground relative overflow-hidden">
-      {/* Faint ambient gradient — provides depth signal on the pre-call screen */}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#080808] text-white relative overflow-hidden p-6">
+      {/* Ambient red glow */}
       <div
         className="absolute inset-0 pointer-events-none"
         aria-hidden="true"
         style={{
           background:
-            'radial-gradient(ellipse 60% 40% at 50% 60%, hsl(194 100% 50% / 0.04) 0%, transparent 70%)',
+            'radial-gradient(ellipse 50% 40% at 50% 55%, rgba(220,38,38,0.07) 0%, transparent 70%)',
         }}
       />
 
-      {/* Hero shell: either shows the pre-call CTA or swaps in the live conversation experience. */}
-      <div className={`flex-1 flex flex-col items-center ${showConversation ? 'justify-start pt-4 overflow-y-auto pb-8' : 'justify-center'}`}>
-        <div className={`z-10 text-center flex flex-col items-center gap-4 ${showConversation ? 'w-full max-w-xl' : ''}`}>
-          <h1 className="text-xl font-semibold animate-fade-up">
-            Coca-Cola Customer Support
-          </h1>
+      <div className="z-10 flex flex-col items-center gap-8 w-full max-w-sm">
+        {/* Brand */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-2xl font-bold select-none shadow-[0_0_32px_rgba(220,38,38,0.4)]">
+            C
+          </div>
+          <div className="flex flex-col items-center gap-0.5">
+            <h1 className="text-xl font-semibold">CocaCola CX</h1>
+            <p className="text-[11px] text-white/40 tracking-widest uppercase">Voice Agent</p>
+          </div>
+        </div>
 
-          {!showConversation && (
-            <p className="text-sm text-muted-foreground animate-fade-up animate-fade-up-d1">
-              Ask Maya about bundle promotions, <br className="sm:hidden" />
-              bulk delivery, and more.
-            </p>
-          )}
+        {/* Language selector */}
+        <div className="flex flex-col gap-1.5 w-full">
+          <label htmlFor="language-select" className="text-[10px] text-white/30 tracking-widest uppercase">
+            Agent Language
+          </label>
+          <select
+            id="language-select"
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(e.target.value)}
+            disabled={isLoading}
+            className="w-full h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-red-500/60 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {LANGUAGE_OPTIONS.map((opt) => (
+              <option key={opt.code} value={opt.code} className="bg-[#1a1a1a]">
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {!showConversation ? (
+        {/* Start button */}
+        <button
+          onClick={handleStartConversation}
+          disabled={isLoading}
+          className="w-full h-11 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 active:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(220,38,38,0.3)]"
+          aria-label={isLoading ? 'Starting conversation' : 'Start conversation'}
+        >
+          {isLoading ? (
             <>
-              {/* Language selector — controls what language the agent speaks */}
-              <div className="flex flex-col items-start gap-1 w-56 animate-fade-up animate-fade-up-d1">
-                <label htmlFor="language-select" className="text-xs text-muted-foreground">
-                  Agent language
-                </label>
-                <select
-                  id="language-select"
-                  value={selectedLanguage}
-                  onChange={(e) => setSelectedLanguage(e.target.value)}
-                  disabled={isLoading}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {LANGUAGE_OPTIONS.map((opt) => (
-                    <option key={opt.code} value={opt.code}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Entry CTA: starts token fetch, agent invite, and RTM setup for a new session. */}
-              <Button
-                onClick={handleStartConversation}
-                disabled={isLoading}
-                className="w-56 animate-fade-up animate-fade-up-d2 border-2 border-primary bg-primary text-primary-foreground hover:bg-transparent hover:text-primary disabled:hover:bg-primary disabled:hover:text-primary-foreground"
-                aria-label={
-                  isLoading
-                    ? 'Starting conversation with AI agent'
-                    : 'Start conversation with AI agent'
-                }
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Starting...
-                  </>
-                ) : (
-                  'Try it now!'
-                )}
-              </Button>
-              {error && <p className="text-xs text-destructive">{error}</p>}
-            </>
-          ) : agoraData && rtmClient ? (
-            <>
-              {/* Non-fatal invite warning: the browser session can still render even if agent start failed. */}
-              {agentJoinError && (
-                <div className="p-3 bg-destructive/10 rounded-md text-destructive text-sm max-w-sm">
-                  Failed to connect with AI agent. The conversation may not work
-                  as expected.
-                </div>
-              )}
-              {/* Browser-only conversation mount: RTC provider, error boundary, and lazy-loaded call UI. */}
-              <Suspense fallback={<LoadingSkeleton />}>
-                <ErrorBoundary>
-                  <AgoraProvider>
-                    <ConversationComponent
-                      agoraData={agoraData}
-                      rtmClient={rtmClient}
-                      onTokenWillExpire={handleTokenWillExpire}
-                      onEndConversation={handleEndConversation}
-                    />
-                  </AgoraProvider>
-                </ErrorBoundary>
-              </Suspense>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Starting…
             </>
           ) : (
-            /* Fallback if session bootstrap partially succeeded but required state is missing. */
-            <p className="text-sm text-muted-foreground">
-              Failed to load conversation data.
-            </p>
+            'Start Conversation'
           )}
-        </div>
+        </button>
+
+        {error && <p className="text-xs text-red-400 text-center">{error}</p>}
       </div>
 
-      {/* Persistent attribution footer for the pre-call and in-call views. */}
-      <footer className="fixed bottom-0 left-0 py-4 pl-4 md:py-6 md:pl-6 z-40">
-        <div className="flex items-center justify-start gap-2 text-muted-foreground">
-          <span className="text-xs font-medium tracking-wide uppercase">
-            Powered by
-          </span>
-          <a
-            href="https://agora.io/en/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-primary transition-colors"
-            aria-label="Visit Agora's website"
-          >
-            <img
-              src="/agora-logo-rgb-blue.svg"
-              alt="Agora"
-              className="h-6 w-auto hover:opacity-80 transition-opacity translate-y-1"
-            />
-            <span className="sr-only">Agora</span>
-          </a>
-        </div>
-      </footer>
     </div>
   );
 }
