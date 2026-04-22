@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Mic, Square } from 'lucide-react';
+import { Square } from 'lucide-react';
 import { setParameter } from 'agora-rtc-sdk-ng/esm';
 import {
   useRTCClient,
@@ -103,13 +103,17 @@ export default function ConversationComponent({
   // Valsea analysis state
   const [prosody, setProsody]                   = useState<ProsodyData | null>(null);
   const [sentiment, setSentiment]               = useState<SentimentData | null>(null);
-  const [isProsodyLoading, setIsProsodyLoading]     = useState(false);
-  const [isSentimentLoading, setIsSentimentLoading] = useState(false);
+  const [isProsodyLoading, setIsProsodyLoading]         = useState(false);
+  const [isSentimentLoading, setIsSentimentLoading]     = useState(false);
+  const [isProsodyUnavailable, setIsProsodyUnavailable]     = useState(false);
+  const [isSentimentUnavailable, setIsSentimentUnavailable] = useState(false);
   const prevUserMsgCountRef = useRef(0);
 
   // UI-only refs
-  const msgTimestampsRef  = useRef<Map<string, number>>(new Map());
-  const transcriptEndRef  = useRef<HTMLDivElement>(null);
+  const msgTimestampsRef      = useRef<Map<string, number>>(new Map());
+  const transcriptEndRef      = useRef<HTMLDivElement>(null);
+  const sentimentDebounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestTranscriptRef   = useRef<string>('');
 
   const addConnectionIssue = useCallback((issue: ConnectionIssue) => {
     setConnectionIssues((prev) => {
@@ -273,13 +277,22 @@ export default function ConversationComponent({
         const form = new FormData();
         form.append('file', blob, 'audio.webm');
         const submitRes = await fetch('/api/valsea/prosody', { method: 'POST', body: form });
-        if (!submitRes.ok) return;
+        if (!submitRes.ok) {
+          if (submitRes.status === 402) setIsProsodyUnavailable(true);
+          return;
+        }
         const { job_id } = await submitRes.json();
         if (!job_id) return;
-        for (let i = 0; i < 12; i++) {
+        let rateRetries = 0;
+        for (let i = 0; i < 10; i++) {
           await new Promise((r) => setTimeout(r, 2000));
           if (!active) return;
           const pollRes = await fetch(`/api/valsea/prosody/${job_id}`);
+          if (pollRes.status === 429 && rateRetries++ < 3) {
+            await new Promise((r) => setTimeout(r, 6000));
+            i--;  // retry this slot after backoff
+            continue;
+          }
           if (!pollRes.ok) break;
           const data = await pollRes.json();
           const emotions: ProsodyData | null = data.emotions ?? ('frustration' in data ? data : null);
@@ -316,23 +329,34 @@ export default function ConversationComponent({
     };
   }, [localMicrophoneTrack, isReady, joinSuccess]);
 
-  // ─── Sentiment: run on full accumulated user transcript ──────────────────
+  // ─── Sentiment: debounced — fires 5 s after last new user message ────────
+  // Debouncing prevents a rapid exchange (3 user turns in quick succession)
+  // from firing 3 concurrent API calls and hitting the Valsea rate limit.
+  // The ref holds the latest accumulated transcript so the delayed call
+  // always uses up-to-date text even if more messages arrived after the timer was set.
   useEffect(() => {
     const userMessages = messageList.filter((m) => String(m.uid) !== agentUID && m.text);
     if (userMessages.length <= prevUserMsgCountRef.current) return;
     prevUserMsgCountRef.current = userMessages.length;
     const fullTranscript = userMessages.map((m) => m.text).join(' ').trim();
     if (!fullTranscript) return;
-    setIsSentimentLoading(true);
-    fetch('/api/valsea/sentiment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript: fullTranscript }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.sentiment) setSentiment(data as SentimentData); })
-      .catch((err) => console.error('[Sentiment]', err))
-      .finally(() => setIsSentimentLoading(false));
+
+    latestTranscriptRef.current = fullTranscript;
+    if (sentimentDebounceRef.current) clearTimeout(sentimentDebounceRef.current);
+    sentimentDebounceRef.current = setTimeout(() => {
+      const transcript = latestTranscriptRef.current;
+      if (!transcript) return;
+      setIsSentimentLoading(true);
+      fetch('/api/valsea/sentiment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript }),
+      })
+        .then((r) => { if (r.status === 402) { setIsSentimentUnavailable(true); return null; } return r.ok ? r.json() : null; })
+        .then((data) => { if (data?.sentiment) setSentiment(data as SentimentData); })
+        .catch((err) => console.error('[Sentiment]', err))
+        .finally(() => setIsSentimentLoading(false));
+    }, 5000);
   }, [messageList, agentUID]);
 
   usePublish([localMicrophoneTrack]);
@@ -428,13 +452,14 @@ export default function ConversationComponent({
               )}
               {messageList.map((msg) => {
                 const isAgent = String(msg.uid) === agentUID;
-                if (!msgTimestampsRef.current.has(msg.turn_id)) {
-                  msgTimestampsRef.current.set(msg.turn_id, Date.now());
+                const msgKey  = `${String(msg.uid)}-${msg.turn_id}`;
+                if (!msgTimestampsRef.current.has(msgKey)) {
+                  msgTimestampsRef.current.set(msgKey, Date.now());
                 }
-                const ts      = msgTimestampsRef.current.get(msg.turn_id)!;
+                const ts      = msgTimestampsRef.current.get(msgKey)!;
                 const timeStr = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 return (
-                  <div key={msg.turn_id} className={`flex flex-col gap-0.5 ${isAgent ? 'items-start' : 'items-end'}`}>
+                  <div key={msgKey} className={`flex flex-col gap-0.5 ${isAgent ? 'items-start' : 'items-end'}`}>
                     <div
                       className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                         isAgent
@@ -472,19 +497,20 @@ export default function ConversationComponent({
         <div className="w-64 sm:w-72 flex flex-col shrink-0 overflow-y-auto">
 
           {/* Mic / visualizer area */}
-          <div className="flex flex-col items-center justify-center gap-4 px-6 py-8 flex-1 min-h-[260px]">
-            {/* Large pulsing mic circle */}
-            <button
-              onClick={handleMicToggle}
-              className={`w-28 h-28 rounded-full flex items-center justify-center transition-all duration-300 focus:outline-none active:scale-95 ${
-                isEnabled
-                  ? 'bg-red-600 shadow-[0_0_48px_rgba(220,38,38,0.45)] hover:shadow-[0_0_64px_rgba(220,38,38,0.6)]'
-                  : 'bg-white/10 hover:bg-white/15'
-              }`}
-              aria-label={isEnabled ? 'Mute microphone' : 'Unmute microphone'}
-            >
-              <Mic className={`w-10 h-10 ${isEnabled ? 'text-white' : 'text-white/40'}`} />
-            </button>
+          <div className="flex flex-col items-center justify-center gap-5 px-6 py-8 flex-1 min-h-[260px] overflow-visible">
+            {/* MicButtonWithVisualizer — zoomed to match previous large button size */}
+            <div style={{ zoom: 2.5 }} className="overflow-visible">
+              <MicButtonWithVisualizer
+                isEnabled={isEnabled}
+                setIsEnabled={setIsEnabled}
+                track={localMicrophoneTrack}
+                onToggle={handleMicToggle}
+                className="overflow-visible"
+                aria-label={isEnabled ? 'Mute microphone' : 'Unmute microphone'}
+                enabledColor="#dc2626"
+                disabledColor="#6b7280"
+              />
+            </div>
 
             {/* Status */}
             <div className="flex flex-col items-center gap-0.5">
@@ -494,28 +520,14 @@ export default function ConversationComponent({
               <p className="text-xs text-white/30">{langLabel}</p>
             </div>
 
-            {/* Small controls row */}
-            <div className="flex items-center gap-3">
-              <div className="conversation-mic-host flex items-center justify-center">
-                <MicButtonWithVisualizer
-                  isEnabled={isEnabled}
-                  setIsEnabled={setIsEnabled}
-                  track={localMicrophoneTrack}
-                  onToggle={handleMicToggle}
-                  className="overflow-visible"
-                  aria-label={isEnabled ? 'Mute microphone' : 'Unmute microphone'}
-                  enabledColor="hsl(var(--primary))"
-                  disabledColor="hsl(var(--destructive))"
-                />
-              </div>
-              <button
-                onClick={onEndConversation}
-                className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
-                aria-label="Stop conversation"
-              >
-                <Square className="w-4 h-4 text-red-400" />
-              </button>
-            </div>
+            {/* Stop button */}
+            <button
+              onClick={onEndConversation}
+              className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
+              aria-label="Stop conversation"
+            >
+              <Square className="w-4 h-4 text-red-400" />
+            </button>
           </div>
 
           {/* Language / Microphone / Model info */}
@@ -551,6 +563,8 @@ export default function ConversationComponent({
           sentiment={sentiment}
           isProsodyLoading={isProsodyLoading}
           isSentimentLoading={isSentimentLoading}
+          isProsodyUnavailable={isProsodyUnavailable}
+          isSentimentUnavailable={isSentimentUnavailable}
         />
       </div>
     </div>

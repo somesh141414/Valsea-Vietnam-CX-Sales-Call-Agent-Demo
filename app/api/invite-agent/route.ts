@@ -280,8 +280,28 @@ function requireEnv(name: string): string {
   return value;
 }
 
-// Custom Valsea STT wrapper — 'valsea' is a backend-only vendor not yet in the SDK types,
-// so we cast through unknown to satisfy the SttConfig discriminated union.
+// BCP-47 language codes for Agora's built-in multilingual ASR.
+// Used for all languages except Vietnamese, which routes to Valsea (better accuracy).
+const AGORA_ASR_LANGUAGE: Record<string, string> = {
+  en: 'en-US', vi: 'vi-VN', zh: 'zh-CN', ja: 'ja-JP', ko: 'ko-KR',
+  fr: 'fr-FR', es: 'es-ES', id: 'id-ID', ms: 'ms-MY', th: 'th-TH',
+  tl: 'fil-PH', ta: 'ta-IN', my: 'my-MM', km: 'km-KH', 'sg-en': 'en-SG',
+  hi: 'hi-IN', pa: 'pa-IN', bn: 'bn-IN', te: 'te-IN', mr: 'mr-IN', kn: 'kn-IN',
+};
+
+// Agora built-in ASR — used for all non-Vietnamese languages.
+// Cast through unknown because the SDK types don't expose an AgoraSTT helper class.
+class AgoraSTT extends BaseSTT {
+  constructor(private bcp47: string) { super(); }
+  toConfig() {
+    return {
+      vendor: 'agora',
+      language: this.bcp47,
+    } as unknown as ReturnType<BaseSTT['toConfig']>;
+  }
+}
+
+// Valsea STT — Vietnamese-specialised ASR, used only when languageCode === 'vi'.
 class ValseasTT extends BaseSTT {
   toConfig() {
     return {
@@ -296,7 +316,7 @@ class ValseasTT extends BaseSTT {
         sample_rate: 16000,
         model: 'valsea-rtt',
         enable_correction: true,
-        language: "chinese",
+        language: 'vietnamese',
       },
     } as unknown as ReturnType<BaseSTT['toConfig']>;
   }
@@ -333,11 +353,16 @@ export async function POST(request: NextRequest) {
     });
 
     const tts = new MiniMaxTTS({
-      model: 'speech_2_8_turbo',
+      model:   'speech_2_8_turbo',
       voiceId: lang.voiceId,
     });
 
-    // Pipeline: Valsea (custom) STT → OpenAI (reseller) LLM → MiniMax TTS.
+    // STT: Valsea for Vietnamese (specialised accuracy), Agora built-in for all others.
+    const stt = languageCode === 'vi'
+      ? new ValseasTT()
+      : new AgoraSTT(AGORA_ASR_LANGUAGE[languageCode] ?? 'en-US');
+
+    // Pipeline: STT → OpenAI LLM → MiniMax TTS.
     const agent = new Agent({
       name: `conversation-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       instructions: `${ADA_PROMPT}\n\n# Language\n${lang.instruction}`,
@@ -365,7 +390,7 @@ export async function POST(request: NextRequest) {
       advancedFeatures: { enable_rtm: true, enable_tools: true },
       parameters: { data_channel: 'rtm', enable_error_message: true },
     })
-      .withStt(new ValseasTT())
+      .withStt(stt)
       .withLlm(
         new OpenAI({
           model: 'gpt-4o-mini',

@@ -20,6 +20,8 @@ interface AnalysisPanelProps {
   sentiment: SentimentData | null;
   isProsodyLoading: boolean;
   isSentimentLoading: boolean;
+  isProsodyUnavailable?: boolean;
+  isSentimentUnavailable?: boolean;
 }
 
 const PROSODY_METRICS: { key: keyof ProsodyData; color: string }[] = [
@@ -71,13 +73,17 @@ export function AnalysisPanel({
   sentiment,
   isProsodyLoading,
   isSentimentLoading,
+  isProsodyUnavailable,
+  isSentimentUnavailable,
 }: AnalysisPanelProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
       {/* Prosody */}
       <PanelShell title="Prosody Analysis">
-        {isProsodyLoading && !prosody ? (
-          <EmptyState label="Analyzing audio — first result in ~10 s…" />
+        {isProsodyUnavailable ? (
+          <EmptyState label="Credits required — top up your Valsea account to enable analysis" />
+        ) : isProsodyLoading && !prosody ? (
+          <EmptyState label="Analyzing audio — first result in ~5 s…" />
         ) : prosody ? (
           <div className="flex flex-col gap-2.5">
             {PROSODY_METRICS.map(({ key, color }) => (
@@ -104,7 +110,9 @@ export function AnalysisPanel({
 
       {/* Sentiment */}
       <PanelShell title="Sentiment">
-        {isSentimentLoading && !sentiment ? (
+        {isSentimentUnavailable ? (
+          <EmptyState label="Credits required — top up your Valsea account to enable analysis" />
+        ) : isSentimentLoading && !sentiment ? (
           <EmptyState label="Analyzing…" />
         ) : sentiment ? (
           <div className="flex flex-col gap-3">
