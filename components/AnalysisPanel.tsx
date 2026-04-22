@@ -40,7 +40,7 @@ const SENTIMENT_STYLE: Record<string, string> = {
 
 function ValseaBadge() {
   return (
-    <span className="text-[10px] font-semibold tracking-widest px-2 py-0.5 rounded-full border border-cyan-400/40 text-cyan-400 bg-cyan-400/10 uppercase">
+    <span className="text-[10px] font-semibold tracking-widest px-2 py-0.5 rounded-full border border-[#9f57f6]  text-white  bg-[#9f57f6] uppercase">
       Valsea
     </span>
   );
