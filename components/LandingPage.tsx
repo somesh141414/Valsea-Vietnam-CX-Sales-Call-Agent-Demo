@@ -57,12 +57,19 @@ const LANGUAGE_OPTIONS = [
   { label: 'Kannada (ಕನ್ನಡ)', code: 'kn' },
 ] as const;
 
+const TTS_OPTIONS = [
+  { label: 'MiniMax (Preset)', value: 'minimax-preset' },
+  { label: 'MiniMax (BYOK)', value: 'minimax-byok' },
+  { label: 'Qwen (DashScope)', value: 'qwen' },
+] as const;
+
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID;
 
 export default function LandingPage() {
   // ─── All hooks must be declared before any conditional return ────────────
   const [showConversation, setShowConversation] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('vi');
+  const [selectedTtsProvider, setSelectedTtsProvider] = useState<string>('minimax-preset');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agoraData, setAgoraData] = useState<AgoraTokenData | null>(null);
@@ -125,6 +132,7 @@ export default function LandingPage() {
             requester_id: responseData.uid,
             channel_name: responseData.channel,
             languageCode: selectedLanguage,
+            ttsProvider: selectedTtsProvider,
           } as ClientStartRequest),
         })
           .then(async (res) => {
@@ -246,6 +254,26 @@ export default function LandingPage() {
             ))}
           </select>
         </div>
+
+        {/* TTS provider selector */}
+        {/* <div className="flex flex-col gap-1.5 w-full">
+          <label htmlFor="tts-select" className="text-[10px] text-white/30 tracking-widest uppercase">
+            TTS Engine
+          </label>
+          <select
+            id="tts-select"
+            value={selectedTtsProvider}
+            onChange={(e) => setSelectedTtsProvider(e.target.value)}
+            disabled={isLoading}
+            className="w-full h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-red-500/60 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {TTS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value} className="bg-[#1a1a1a]">
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div> */}
 
         {/* Start button */}
         <button

@@ -4,6 +4,7 @@ import {
   Agent,
   Area,
   BaseSTT,
+  BaseTTS,
   ExpiresIn,
   MiniMaxTTS,
   OpenAI,
@@ -322,12 +323,73 @@ class ValseasTT extends BaseSTT {
   }
 }
 
+// Qwen TTS via DashScope — uses the OpenAI-compatible vendor path.
+// The LLM uses a top-level `url` field (not params.url/base_url) for custom endpoints.
+// TTS follows the same pattern: top-level `url` overrides the default OpenAI endpoint.
+class QwenTTS extends BaseTTS {
+  constructor(
+    private apiKey: string,
+    private baseUrl: string,
+    private model: string,
+    private voice: string,
+    private speed: number,
+  ) { super(); }
+  toConfig() {
+    return {
+      vendor: 'openai',
+      // Top-level url mirrors how OpenAI LLM sets its endpoint; Agora routes TTS
+      // calls here instead of the default https://api.openai.com/v1/audio/speech.
+      url: `${this.baseUrl}/audio/speech`,
+      params: {
+        api_key: this.apiKey,
+        model: this.model,
+        voice: this.voice,
+        speed: this.speed,
+      },
+    } as unknown as ReturnType<BaseTTS['toConfig']>;
+  }
+}
+
+// Returns the TTS engine for the given provider.
+// requestProvider (from request body) takes precedence over NEXT_TTS_PROVIDER env var.
+// Values: minimax-preset (default) | minimax-byok | qwen
+function buildTTS(langVoiceId: string, requestProvider?: string): MiniMaxTTS | QwenTTS {
+  const provider = requestProvider ?? process.env.NEXT_TTS_PROVIDER ?? 'minimax-preset';
+  const minimaxVoiceId = process.env.NEXT_MINIMAX_VOICE_ID ?? langVoiceId;
+
+  if (provider === 'minimax-byok') {
+    return new MiniMaxTTS({
+      key: requireEnv('NEXT_MINIMAX_API_KEY'),
+      groupId: requireEnv('NEXT_MINIMAX_GROUP_ID'),
+      model: process.env.NEXT_MINIMAX_MODEL ?? 'speech-02-turbo',
+      voiceId: minimaxVoiceId,
+      url: process.env.NEXT_MINIMAX_URL ?? 'wss://api-uw.minimax.io/ws/v1/t2a_v2',
+    });
+  }
+
+  if (provider === 'qwen') {
+    return new QwenTTS(
+      requireEnv('DASHSCOPE_API_KEY'),
+      process.env.NEXT_QWEN_BASE_URL ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      process.env.NEXT_QWEN_MODEL ?? 'cosyvoice-v2',
+      process.env.NEXT_QWEN_VOICE ?? 'longxiaochun',
+      Number(process.env.NEXT_QWEN_SPEED ?? '1'),
+    );
+  }
+
+  // Default: minimax-preset (Agora-managed credentials)
+  return new MiniMaxTTS({
+    model: 'speech_2_8_turbo',
+    voiceId: minimaxVoiceId,
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     // --- 1. Parse request ---
 
     const body: ClientStartRequest = await request.json();
-    const { requester_id, channel_name, languageCode = 'vi' } = body;
+    const { requester_id, channel_name, languageCode = 'vi', ttsProvider } = body;
     const lang = LANGUAGE_CONFIG[languageCode] ?? LANGUAGE_CONFIG['vi'];
     const greeting = process.env.NEXT_AGENT_GREETING ?? lang.greeting;
 
@@ -352,10 +414,7 @@ export async function POST(request: NextRequest) {
       appCertificate,
     });
 
-    const tts = new MiniMaxTTS({
-      model:   'speech_2_8_turbo',
-      voiceId: lang.voiceId,
-    });
+    const tts = buildTTS(lang.voiceId, ttsProvider);
 
     // STT: Valsea for Vietnamese (specialised accuracy), Agora built-in for all others.
     const stt = languageCode === 'vi'
@@ -416,7 +475,13 @@ export async function POST(request: NextRequest) {
       debug: true,
     });
 
+    const resolvedProvider = ttsProvider ?? process.env.NEXT_TTS_PROVIDER ?? 'minimax-preset';
+    console.log(`[invite-agent] Starting agent — lang=${languageCode} tts=${resolvedProvider}`);
+    console.log('[invite-agent] TTS config:', JSON.stringify(tts.toConfig(), null, 2));
+
     const agentId = await session.start();
+
+    console.log(`[invite-agent] Agent started — id=${agentId} tts=${resolvedProvider}`);
 
     return NextResponse.json({
       agent_id: agentId,
@@ -424,15 +489,8 @@ export async function POST(request: NextRequest) {
       state: 'RUNNING',
     } as AgentResponse);
   } catch (error) {
-    console.error('Error starting conversation:', error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Failed to start conversation',
-      },
-      { status: 500 },
-    );
+    console.error('[invite-agent] Failed to start agent:', error);
+    const message = error instanceof Error ? error.message : 'Failed to start conversation';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

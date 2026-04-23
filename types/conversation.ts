@@ -11,6 +11,7 @@ export interface ClientStartRequest {
   requester_id: string;
   channel_name: string;
   languageCode?: string; // e.g. 'en', 'vi', 'zh', 'ja', 'ko'
+  ttsProvider?: string;  // 'minimax-preset' | 'minimax-byok' | 'qwen'
 }
 
 export interface StopConversationRequest {
@@ -34,4 +35,5 @@ export interface ConversationComponentProps {
   onTokenWillExpire: (uid: string) => Promise<AgoraRenewalTokens>;
   onEndConversation: () => void;
   selectedLanguage?: string;
+  ttsProvider?: string; // 'minimax-preset' | 'minimax-byok' | 'qwen'
 }

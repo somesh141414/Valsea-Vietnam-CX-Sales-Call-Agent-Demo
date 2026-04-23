@@ -33,6 +33,7 @@ import {
 } from '@/lib/conversation';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import {
+  ConversationErrorCard,
   getConversationIssueSeverity,
   type ConnectionIssue,
 } from './ConversationErrorCard';
@@ -79,12 +80,19 @@ const AGENT_STATE_LABEL: Record<string, string> = {
   silent:    'Ready',
 };
 
+const TTS_PROVIDER_LABELS: Record<string, string> = {
+  'minimax-preset': 'MiniMax Speech 2.8 Turbo',
+  'minimax-byok':   'MiniMax (BYOK)',
+  'qwen':           'Qwen CosyVoice',
+};
+
 export default function ConversationComponent({
   agoraData,
   rtmClient,
   onTokenWillExpire,
   onEndConversation,
   selectedLanguage = 'en',
+  ttsProvider = 'minimax-preset',
 }: ConversationComponentProps) {
   const client      = useRTCClient();
   const remoteUsers = useRemoteUsers();
@@ -372,9 +380,10 @@ export default function ConversationComponent({
   }, [remoteUsers, agentUID]);
   useClientEvent(client, 'connection-state-change', (s) => setConnectionState(s));
 
+  const clearConnectionIssues = useCallback(() => setConnectionIssues([]), []);
+
   // Suppress unused-read warnings — state is still written to by event handlers
   void getConversationIssueSeverity;
-  void connectionIssues;
   void isAgentConnected;
   void connectionState;
 
@@ -396,8 +405,9 @@ export default function ConversationComponent({
 
   useClientEvent(client, 'token-privilege-will-expire', handleTokenWillExpire);
 
-  const stateLabel = agentState ? (AGENT_STATE_LABEL[agentState] ?? 'Ready') : 'Connecting…';
-  const langLabel  = LANGUAGE_LABELS[selectedLanguage] ?? selectedLanguage;
+  const stateLabel    = agentState ? (AGENT_STATE_LABEL[agentState] ?? 'Ready') : 'Connecting…';
+  const langLabel     = LANGUAGE_LABELS[selectedLanguage] ?? selectedLanguage;
+  const ttsLabel      = TTS_PROVIDER_LABELS[ttsProvider] ?? ttsProvider;
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -546,13 +556,32 @@ export default function ConversationComponent({
                 </div>
               </div>
             </div>
-            <div className="flex flex-col gap-1.5">
+            {/* <div className="flex flex-col gap-1.5">
               <span className="text-[9px] text-white/30 tracking-widest uppercase">Model</span>
               <div className="h-9 px-3 rounded-md bg-white/5 border border-white/10 flex items-center text-xs text-white/60 truncate">
-                MiniMax Speech 2.8 Turbo
+                {ttsLabel}
+              </div>
+            </div> */}
+          </div>
+
+          {connectionIssues.length > 0 && (
+            <div className="border-t border-white/5 p-3 flex flex-col gap-2 shrink-0">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] text-white/30 tracking-widest uppercase">Agent Errors</span>
+                <button
+                  onClick={clearConnectionIssues}
+                  className="text-[9px] text-white/30 hover:text-white/60 transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
+                {connectionIssues.map((issue) => (
+                  <ConversationErrorCard key={issue.id} issue={issue} />
+                ))}
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
