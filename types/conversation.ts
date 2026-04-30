@@ -10,8 +10,9 @@ export interface AgoraTokenData {
 export interface ClientStartRequest {
   requester_id: string;
   channel_name: string;
-  languageCode?: string; // e.g. 'en', 'vi', 'zh', 'ja', 'ko'
-  ttsProvider?: string;  // 'minimax-preset' | 'minimax-byok' | 'qwen'
+  languageCode?: string;
+  ttsProvider?: string;
+  allowLanguageSwitching?: boolean;
 }
 
 export interface StopConversationRequest {
@@ -35,5 +36,7 @@ export interface ConversationComponentProps {
   onTokenWillExpire: (uid: string) => Promise<AgoraRenewalTokens>;
   onEndConversation: () => void;
   selectedLanguage?: string;
-  ttsProvider?: string; // 'minimax-preset' | 'minimax-byok' | 'qwen'
+  ttsProvider?: string;
+  allowLanguageSwitching?: boolean;
+  onChangeLanguage?: (newLang: string) => Promise<void>;
 }

@@ -3,6 +3,7 @@ import {
   AgoraClient,
   Agent,
   Area,
+  AresSTT,
   BaseSTT,
   BaseTTS,
   ExpiresIn,
@@ -163,45 +164,46 @@ const ADA_PROMPT = SYSTEM_PROMPT;
 const agentUid = process.env.NEXT_PUBLIC_AGENT_UID ?? String(DEFAULT_AGENT_UID);
 
 // Language → { voiceId, instruction, greeting }
-// voiceId: MiniMax speech-2.8-turbo is multilingual — the same voice speaks any language
-//          when the LLM outputs text in that language. Update voice IDs here if you have
-//          language-specific MiniMax voices available on your account.
+// Only languages supported by Valsea ASR are active.
+// Languages without Valsea ASR support are commented out.
 const LANGUAGE_CONFIG: Record<string, { voiceId: string; instruction: string; greeting: string }> = {
-  en: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in English, regardless of what language the user speaks.',
-    greeting: "Hi there! You've reached Coca-Cola Customer Support. I'm Maya. How can I help you today?",
-  },
+  // ── Not supported by Valsea ASR ──────────────────────────────────────────
+  // en: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in English, regardless of what language the user speaks.',
+  //   greeting: "Hi there! You've reached Coca-Cola Customer Support. I'm Maya. How can I help you today?",
+  // },
   vi: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Vietnamese (Tiếng Việt), regardless of what language the user speaks.',
     greeting: 'Xin chào! Đây là bộ phận Hỗ trợ Khách hàng Coca-Cola. Tôi là Maya. Tôi có thể giúp gì cho bạn hôm nay?',
   },
-  zh: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Mandarin Chinese (普通话), regardless of what language the user speaks.',
-    greeting: '您好！这里是可口可乐客户服务中心。我是Maya。今天有什么可以帮您的吗？',
-  },
-  ja: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Japanese (日本語), regardless of what language the user speaks.',
-    greeting: 'こんにちは！コカ・コーラのカスタマーサポートです。私はMayaと申します。本日はどのようなご用件でしょうか？',
-  },
-  ko: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Korean (한국어), regardless of what language the user speaks.',
-    greeting: '안녕하세요! 코카콜라 고객 지원센터입니다. 저는 Maya입니다. 오늘 어떻게 도와드릴까요?',
-  },
-  fr: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in French (Français), regardless of what language the user speaks.',
-    greeting: 'Bonjour ! Vous avez joint le Service Client Coca-Cola. Je suis Maya. Comment puis-je vous aider aujourd\'hui ?',
-  },
-  es: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Spanish (Español), regardless of what language the user speaks.',
-    greeting: '¡Hola! Ha llegado al Servicio de Atención al Cliente de Coca-Cola. Soy Maya. ¿En qué puedo ayudarle hoy?',
-  },
+  // zh: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Mandarin Chinese (普通话), regardless of what language the user speaks.',
+  //   greeting: '您好！这里是可口可乐客户服务中心。我是Maya。今天有什么可以帮您的吗？',
+  // },
+  // ja: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Japanese (日本語), regardless of what language the user speaks.',
+  //   greeting: 'こんにちは！コカ・コーラのカスタマーサポートです。私はMayaと申します。本日はどのようなご用件でしょうか？',
+  // },
+  // ko: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Korean (한국어), regardless of what language the user speaks.',
+  //   greeting: '안녕하세요! 코카콜라 고객 지원센터입니다. 저는 Maya입니다. 오늘 어떻게 도와드릴까요?',
+  // },
+  // fr: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in French (Français), regardless of what language the user speaks.',
+  //   greeting: 'Bonjour ! Vous avez joint le Service Client Coca-Cola. Je suis Maya. Comment puis-je vous aider aujourd\'hui ?',
+  // },
+  // es: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Spanish (Español), regardless of what language the user speaks.',
+  //   greeting: '¡Hola! Ha llegado al Servicio de Atención al Cliente de Coca-Cola. Soy Maya. ¿En qué puedo ayudarle hoy?',
+  // },
+  // ── Supported by Valsea ASR ───────────────────────────────────────────────
   id: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Indonesian (Bahasa Indonesia), regardless of what language the user speaks.',
@@ -227,52 +229,51 @@ const LANGUAGE_CONFIG: Record<string, { voiceId: string; instruction: string; gr
     instruction: 'Always respond in Tamil (தமிழ்), regardless of what language the user speaks.',
     greeting: 'வணக்கம்! நீங்கள் Coca-Cola வாடிக்கையாளர் சேவையை அடைந்துவிட்டீர்கள். நான் Maya. இன்று உங்களுக்கு எவ்வாறு உதவ முடியும்?',
   },
-  my: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Burmese (မြန်မာဘာသာ), regardless of what language the user speaks.',
-    greeting: 'မင်္ဂလာပါ! Coca-Cola ဖောက်သည်ဝန်ဆောင်မှုသို့ ကြိုဆိုပါသည်။ ကျွန်မ Maya ပါ။ ဒီနေ့ ဘာကူညီပေးရမလဲ?',
-  },
+  // my: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Burmese (မြန်မာဘာသာ), regardless of what language the user speaks.',
+  //   greeting: 'မင်္ဂလာပါ! Coca-Cola ဖောက်သည်ဝန်ဆောင်မှုသို့ ကြိုဆိုပါသည်။ ကျွန်မ Maya ပါ။ ဒီနေ့ ဘာကူညီပေးရမလဲ?',
+  // },
   km: {
     voiceId: 'English_captivating_female1',
     instruction: 'Always respond in Khmer (ភាសាខ្មែរ), regardless of what language the user speaks.',
     greeting: 'សួស្ដី! អ្នកបានទាក់ទងមកផ្នែកគាំទ្រអតិថិជន Coca-Cola ។ ខ្ញុំឈ្មោះ Maya ។ ថ្ងៃនេះខ្ញុំអាចជួយអ្នកអ្វីបាន?',
   },
-  'sg-en': {
-    voiceId: 'English_captivating_female1',
-    // Singlish is a creole — instruct the LLM to mimic its characteristic style
-    instruction: 'Always respond in Singlish (Singaporean English creole). Use characteristic Singlish features: sentence-final particles like "lah", "leh", "lor", "meh", "sia", "can?"; direct grammar influenced by Malay and Hokkien; and a casual, friendly tone. For example: "Can do one lah, no worries!" or "Wah, that one very good leh."',
-    greeting: "Hey there lah! You've reached Coca-Cola Customer Support. I'm Maya. How can I help you today?",
-  },
-  hi: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Hindi (हिन्दी), regardless of what language the user speaks.',
-    greeting: 'नमस्ते! आप Coca-Cola के ग्राहक सेवा से जुड़े हैं। मैं Maya हूँ। आज मैं आपकी कैसे मदद कर सकती हूँ?',
-  },
-  pa: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Punjabi (ਪੰਜਾਬੀ), regardless of what language the user speaks.',
-    greeting: 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਤੁਸੀਂ Coca-Cola ਦੀ ਗਾਹਕ ਸੇਵਾ ਨਾਲ ਜੁੜੇ ਹੋ। ਮੈਂ Maya ਹਾਂ। ਅੱਜ ਮੈਂ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦੀ ਹਾਂ?',
-  },
-  bn: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Bengali (বাংলা), regardless of what language the user speaks.',
-    greeting: 'নমস্কার! আপনি Coca-Cola গ্রাহক সেবায় যোগাযোগ করেছেন। আমি Maya। আজ আপনাকে কীভাবে সাহায্য করতে পারি?',
-  },
-  te: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Telugu (తెలుగు), regardless of what language the user speaks.',
-    greeting: 'నమస్కారం! మీరు Coca-Cola కస్టమర్ సపోర్ట్‌కు చేరుకున్నారు. నేను Maya. ఈరోజు మీకు ఎలా సహాయం చేయగలను?',
-  },
-  mr: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Marathi (मराठी), regardless of what language the user speaks.',
-    greeting: 'नमस्कार! तुम्ही Coca-Cola च्या ग्राहक सेवेशी जोडले गेले आहात. मी Maya आहे. आज मी तुम्हाला कशी मदद करू शकते?',
-  },
-  kn: {
-    voiceId: 'English_captivating_female1',
-    instruction: 'Always respond in Kannada (ಕನ್ನಡ), regardless of what language the user speaks.',
-    greeting: 'ನಮಸ್ಕಾರ! ನೀವು Coca-Cola ಗ್ರಾಹಕ ಸೇವೆಯನ್ನು ತಲುಪಿದ್ದೀರಿ. ನಾನು Maya. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?',
-  },
+  // 'sg-en': {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Singlish (Singaporean English creole). Use characteristic Singlish features: sentence-final particles like "lah", "leh", "lor", "meh", "sia", "can?"; direct grammar influenced by Malay and Hokkien; and a casual, friendly tone. For example: "Can do one lah, no worries!" or "Wah, that one very good leh."',
+  //   greeting: "Hey there lah! You've reached Coca-Cola Customer Support. I'm Maya. How can I help you today?",
+  // },
+  // hi: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Hindi (हिन्दी), regardless of what language the user speaks.',
+  //   greeting: 'नमस्ते! आप Coca-Cola के ग्राहक सेवा से जुड़े हैं। मैं Maya हूँ। आज मैं आपकी कैसे मदद कर सकती हूँ?',
+  // },
+  // pa: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Punjabi (ਪੰਜਾਬੀ), regardless of what language the user speaks.',
+  //   greeting: 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਤੁਸੀਂ Coca-Cola ਦੀ ਗਾਹਕ ਸੇਵਾ ਨਾਲ ਜੁੜੇ ਹੋ। ਮੈਂ Maya ਹਾਂ। ਅੱਜ ਮੈਂ ਤੁਹਾਡੀ ਕਿਵੇਂ ਮਦਦ ਕਰ ਸਕਦੀ ਹਾਂ?',
+  // },
+  // bn: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Bengali (বাংলা), regardless of what language the user speaks.',
+  //   greeting: 'নমস্কার! আপনি Coca-Cola গ্রাহক সেবায় যোগাযোগ করেছেন। আমি Maya। আজ আপনাকে কীভাবে সাহায্য করতে পারি?',
+  // },
+  // te: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Telugu (తెలుగు), regardless of what language the user speaks.',
+  //   greeting: 'నమస్కారం! మీరు Coca-Cola కస్టమర్ సపోర్ట్‌కు చేరుకున్నారు. నేను Maya. ఈరోజు మీకు ఎలా సహాయం చేయగలను?',
+  // },
+  // mr: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Marathi (मराठी), regardless of what language the user speaks.',
+  //   greeting: 'नमस्कार! तुम्ही Coca-Cola च्या ग्राहक सेवेशी जोडले गेले आहात. मी Maya आहे. आज मी तुम्हाला कशी मदद करू शकते?',
+  // },
+  // kn: {
+  //   voiceId: 'English_captivating_female1',
+  //   instruction: 'Always respond in Kannada (ಕನ್ನಡ), regardless of what language the user speaks.',
+  //   greeting: 'ನಮಸ್ಕಾರ! ನೀವು Coca-Cola ಗ್ರಾಹಕ ಸೇವೆಯನ್ನು ತಲುಪಿದ್ದೀರಿ. ನಾನು Maya. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?',
+  // },
 };
 
 function requireEnv(name: string): string {
@@ -281,33 +282,26 @@ function requireEnv(name: string): string {
   return value;
 }
 
-// BCP-47 language codes for Agora's built-in multilingual ASR.
-// Used for all languages except Vietnamese, which routes to Valsea (better accuracy).
-const AGORA_ASR_LANGUAGE: Record<string, string> = {
-  en: 'en-US', vi: 'vi-VN', zh: 'zh-CN', ja: 'ja-JP', ko: 'ko-KR',
-  fr: 'fr-FR', es: 'es-ES', id: 'id-ID', ms: 'ms-MY', th: 'th-TH',
-  tl: 'fil-PH', ta: 'ta-IN', my: 'my-MM', km: 'km-KH', 'sg-en': 'en-SG',
-  hi: 'hi-IN', pa: 'pa-IN', bn: 'bn-IN', te: 'te-IN', mr: 'mr-IN', kn: 'kn-IN',
+// Valsea language name strings as expected by the valsea-rtt model.
+// Only languages confirmed supported by Valsea ASR are listed here.
+// Languages absent from this map (en, zh, ja, ko, fr, es, my, sg-en, hi, pa, bn, te, mr, kn)
+// are not supported by Valsea ASR and are commented out throughout this file and LandingPage.tsx.
+const VALSEA_ASR_LANGUAGE: Record<string, string> = {
+  vi: 'vietnamese',
+  id: 'indonesian',
+  ms: 'malay',
+  th: 'thai',
+  tl: 'filipino',
+  ta: 'tamil',
+  km: 'khmer',
 };
 
-// Agora built-in ASR — used for all non-Vietnamese languages.
-// Cast through unknown because the SDK types don't expose an AgoraSTT helper class.
-class AgoraSTT extends BaseSTT {
-  constructor(private bcp47: string) { super(); }
-  toConfig() {
-    return {
-      vendor: 'agora',
-      language: this.bcp47,
-    } as unknown as ReturnType<BaseSTT['toConfig']>;
-  }
-}
-
-// Valsea STT — Vietnamese-specialised ASR, used only when languageCode === 'vi'.
-class ValseasTT extends BaseSTT {
+// Valsea STT — used for all active languages (all of which are Valsea-supported).
+class ValseaSTT extends BaseSTT {
+  constructor(private language: string) { super(); }
   toConfig() {
     return {
       vendor: 'valsea',
-      language: 'vi-VN',
       params: {
         uri: 'wss://api.valsea.ai/v1/realtime',
         auth_mode: 'header',
@@ -317,7 +311,7 @@ class ValseasTT extends BaseSTT {
         sample_rate: 16000,
         model: 'valsea-rtt',
         enable_correction: true,
-        language: 'vietnamese',
+        language: this.language,
       },
     } as unknown as ReturnType<BaseSTT['toConfig']>;
   }
@@ -389,7 +383,7 @@ export async function POST(request: NextRequest) {
     // --- 1. Parse request ---
 
     const body: ClientStartRequest = await request.json();
-    const { requester_id, channel_name, languageCode = 'vi', ttsProvider } = body;
+    const { requester_id, channel_name, languageCode = 'vi', ttsProvider, allowLanguageSwitching = false } = body;
     const lang = LANGUAGE_CONFIG[languageCode] ?? LANGUAGE_CONFIG['vi'];
     const greeting = process.env.NEXT_AGENT_GREETING ?? lang.greeting;
 
@@ -416,15 +410,28 @@ export async function POST(request: NextRequest) {
 
     const tts = buildTTS(lang.voiceId, ttsProvider);
 
-    // STT: Valsea for Vietnamese (specialised accuracy), Agora built-in for all others.
-    const stt = languageCode === 'vi'
-      ? new ValseasTT()
-      : new AgoraSTT(AGORA_ASR_LANGUAGE[languageCode] ?? 'en-US');
+    // STT selection:
+    // - Language switching ON  → Agora AresSTT (built-in multilingual, no key required).
+    //   The user may speak any language mid-call and the LLM will detect and match it.
+    // - Language switching OFF → Valsea STT locked to the selected language for maximum
+    //   single-language accuracy.
+    let stt: BaseSTT;
+    if (allowLanguageSwitching) {
+      stt = new AresSTT();
+    } else {
+      const valseaLang = VALSEA_ASR_LANGUAGE[languageCode] ?? VALSEA_ASR_LANGUAGE['vi'];
+      stt = new ValseaSTT(valseaLang);
+    }
+
+    // LLM instruction adapts to the switching mode.
+    const languageInstruction = allowLanguageSwitching
+      ? 'Detect the language the user is currently speaking and respond in that exact language every single turn. If they speak Mandarin (普通话), reply in Mandarin. If they speak Tamil (தமிழ்), reply in Tamil. If they speak English, reply in English. Always match the user\'s language — never lock onto one language.'
+      : lang.instruction;
 
     // Pipeline: STT → OpenAI LLM → MiniMax TTS.
     const agent = new Agent({
       name: `conversation-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
-      instructions: `${ADA_PROMPT}\n\n# Language\n${lang.instruction}`,
+      instructions: `${ADA_PROMPT}\n\n# Language\n${languageInstruction}`,
       greeting: greeting,
       failureMessage: 'Please wait a moment.',
       maxHistory: 50,
