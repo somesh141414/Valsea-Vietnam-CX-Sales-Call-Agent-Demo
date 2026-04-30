@@ -108,10 +108,9 @@ type ConversationErrorCardProps = {
 
 export function ConversationErrorCard({ issue }: ConversationErrorCardProps) {
   const normalizedMessage = getNormalizedMessage(issue);
-  const showNormalizedMessage = normalizedMessage !== issue.message;
+  const isNormalized = normalizedMessage !== issue.message;
   const cta = getCta(issue);
   const transportCode = String(issue.code);
-  const showRaw = issue.message !== normalizedMessage;
 
   return (
     // Compact diagnostic card: headline for quick triage, optional CTA, raw payload for deeper debugging.
@@ -119,10 +118,12 @@ export function ConversationErrorCard({ issue }: ConversationErrorCardProps) {
       <div className="font-medium text-destructive">
         Conversation AI Engine Error: {transportCode}
       </div>
-      {showNormalizedMessage && <div className="text-foreground">{normalizedMessage}</div>}
+      {/* Always show the message — normalized copy when available, raw otherwise */}
+      {normalizedMessage && <div className="text-foreground">{normalizedMessage}</div>}
       {cta && <div className="text-[11px] text-destructive/90">{cta}</div>}
-      {showRaw && (
-        <div className="mt-2 border-t border-destructive/20 pt-2 text-muted-foreground break-words">
+      {/* When normalized, also show the raw payload for deeper debugging */}
+      {isNormalized && (
+        <div className="mt-1 border-t border-destructive/20 pt-1 text-muted-foreground break-words text-[10px]">
           {issue.message}
         </div>
       )}

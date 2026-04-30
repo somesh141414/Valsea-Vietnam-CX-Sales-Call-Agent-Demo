@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Square } from 'lucide-react';
+import Image from 'next/image';
+import { Loader2, Activity, Clock, PhoneOff, Mic, MicOff } from 'lucide-react';
 import { setParameter } from 'agora-rtc-sdk-ng/esm';
 import {
   useRTCClient,
@@ -23,7 +24,6 @@ import {
   type UserTranscription,
   type AgentTranscription,
 } from 'agora-agent-client-toolkit';
-import { MicButtonWithVisualizer } from 'agora-agent-uikit/rtc';
 import { DEFAULT_AGENT_UID } from '@/lib/agora';
 import {
   getCurrentInProgressMessage,
@@ -33,6 +33,7 @@ import {
 } from '@/lib/conversation';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import {
+  ConversationErrorCard,
   getConversationIssueSeverity,
   type ConnectionIssue,
 } from './ConversationErrorCard';
@@ -41,13 +42,22 @@ import type { ConversationComponentProps } from '@/types/conversation';
 
 const MAX_CONNECTION_ISSUES = 6;
 
+// Language display labels — only Valsea-ASR-supported languages
 const LANGUAGE_LABELS: Record<string, string> = {
-  en: 'English', vi: 'Vietnamese', zh: 'Chinese (中文)', ja: 'Japanese (日本語)',
-  ko: 'Korean (한국어)', fr: 'French', es: 'Spanish', id: 'Indonesian',
-  ms: 'Malay', th: 'Thai', tl: 'Filipino', ta: 'Tamil', my: 'Burmese',
-  km: 'Khmer', 'sg-en': 'Singlish', hi: 'Hindi', pa: 'Punjabi',
-  bn: 'Bengali', te: 'Telugu', mr: 'Marathi', kn: 'Kannada',
+  vi: 'Vietnamese', id: 'Indonesian', ms: 'Malay',
+  th: 'Thai', tl: 'Filipino', ta: 'Tamil', km: 'Khmer',
 };
+
+// Language options for the mid-call switcher
+const VALSEA_LANGUAGES = [
+  { label: 'Vietnamese', code: 'vi' },
+  { label: 'Indonesian', code: 'id' },
+  { label: 'Malay', code: 'ms' },
+  { label: 'Thai', code: 'th' },
+  { label: 'Filipino', code: 'tl' },
+  { label: 'Tamil', code: 'ta' },
+  { label: 'Khmer', code: 'km' },
+] as const;
 
 type RtmMessageErrorPayload = {
   object: 'message.error';
@@ -72,9 +82,9 @@ function isRtmSalStatusPayload(value: unknown): value is RtmSalStatusPayload {
 }
 
 const AGENT_STATE_LABEL: Record<string, string> = {
-  listening: 'Listening…',
-  thinking:  'Thinking…',
-  speaking:  'Speaking…',
+  listening: 'Listening',
+  thinking:  'Thinking',
+  speaking:  'Speaking',
   idle:      'Ready',
   silent:    'Ready',
 };
@@ -84,36 +94,46 @@ export default function ConversationComponent({
   rtmClient,
   onTokenWillExpire,
   onEndConversation,
-  selectedLanguage = 'en',
+  selectedLanguage = 'vi',
+  allowLanguageSwitching = false,
+  onChangeLanguage,
 }: ConversationComponentProps) {
   const client      = useRTCClient();
   const remoteUsers = useRemoteUsers();
-  const [isEnabled, setIsEnabled]             = useState(true);
+  const [isEnabled, setIsEnabled]               = useState(true);
   const [isAgentConnected, setIsAgentConnected] = useState(false);
-  const [connectionState, setConnectionState] = useState<string>('CONNECTING');
+  const [connectionState, setConnectionState]   = useState<string>('CONNECTING');
   const agentUID = process.env.NEXT_PUBLIC_AGENT_UID ?? String(DEFAULT_AGENT_UID);
   const [joinedUID, setJoinedUID] = useState<UID>(0);
 
   const [rawTranscript, setRawTranscript] = useState<
     TranscriptHelperItem<Partial<UserTranscription | AgentTranscription>>[]
   >([]);
-  const [agentState, setAgentState]           = useState<AgentState | null>(null);
+  const [agentState, setAgentState]             = useState<AgentState | null>(null);
   const [connectionIssues, setConnectionIssues] = useState<ConnectionIssue[]>([]);
 
+  // Language switching state
+  const [currentLang, setCurrentLang]               = useState(selectedLanguage);
+  const [isLanguageSwitching, setIsLanguageSwitching] = useState(false);
+
+  // Sync currentLang when parent updates selectedLanguage (post-switch)
+  useEffect(() => {
+    setCurrentLang(selectedLanguage);
+  }, [selectedLanguage]);
+
   // Valsea analysis state
-  const [prosody, setProsody]                   = useState<ProsodyData | null>(null);
-  const [sentiment, setSentiment]               = useState<SentimentData | null>(null);
-  const [isProsodyLoading, setIsProsodyLoading]         = useState(false);
-  const [isSentimentLoading, setIsSentimentLoading]     = useState(false);
-  const [isProsodyUnavailable, setIsProsodyUnavailable]     = useState(false);
+  const [prosody, setProsody]                             = useState<ProsodyData | null>(null);
+  const [sentiment, setSentiment]                         = useState<SentimentData | null>(null);
+  const [isProsodyLoading, setIsProsodyLoading]           = useState(false);
+  const [isSentimentLoading, setIsSentimentLoading]       = useState(false);
+  const [isProsodyUnavailable, setIsProsodyUnavailable]   = useState(false);
   const [isSentimentUnavailable, setIsSentimentUnavailable] = useState(false);
   const prevUserMsgCountRef = useRef(0);
 
-  // UI-only refs
-  const msgTimestampsRef      = useRef<Map<string, number>>(new Map());
-  const transcriptEndRef      = useRef<HTMLDivElement>(null);
-  const sentimentDebounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestTranscriptRef   = useRef<string>('');
+  const msgTimestampsRef     = useRef<Map<string, number>>(new Map());
+  const transcriptEndRef     = useRef<HTMLDivElement>(null);
+  const sentimentDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestTranscriptRef  = useRef<string>('');
 
   const addConnectionIssue = useCallback((issue: ConnectionIssue) => {
     setConnectionIssues((prev) => {
@@ -255,12 +275,12 @@ export default function ConversationComponent({
   const messageList              = useMemo(() => getMessageList(transcript), [transcript]);
   const currentInProgressMessage = useMemo(() => getCurrentInProgressMessage(transcript), [transcript]);
 
-  // Auto-scroll transcript to bottom
+  // Auto-scroll transcript
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messageList, currentInProgressMessage]);
 
-  // ─── Prosody: restart-cycle recording ────────────────────────────────────
+  // ─── Prosody: continuous 8-second recording cycles ───────────────────────
   useEffect(() => {
     if (!localMicrophoneTrack || !isReady || !joinSuccess) return;
     let active = true;
@@ -290,7 +310,7 @@ export default function ConversationComponent({
           const pollRes = await fetch(`/api/valsea/prosody/${job_id}`);
           if (pollRes.status === 429 && rateRetries++ < 3) {
             await new Promise((r) => setTimeout(r, 6000));
-            i--;  // retry this slot after backoff
+            i--;
             continue;
           }
           if (!pollRes.ok) break;
@@ -329,11 +349,7 @@ export default function ConversationComponent({
     };
   }, [localMicrophoneTrack, isReady, joinSuccess]);
 
-  // ─── Sentiment: debounced — fires 5 s after last new user message ────────
-  // Debouncing prevents a rapid exchange (3 user turns in quick succession)
-  // from firing 3 concurrent API calls and hitting the Valsea rate limit.
-  // The ref holds the latest accumulated transcript so the delayed call
-  // always uses up-to-date text even if more messages arrived after the timer was set.
+  // ─── Sentiment: debounced 5 s after last new user message ────────────────
   useEffect(() => {
     const userMessages = messageList.filter((m) => String(m.uid) !== agentUID && m.text);
     if (userMessages.length <= prevUserMsgCountRef.current) return;
@@ -372,9 +388,10 @@ export default function ConversationComponent({
   }, [remoteUsers, agentUID]);
   useClientEvent(client, 'connection-state-change', (s) => setConnectionState(s));
 
-  // Suppress unused-read warnings — state is still written to by event handlers
+  const clearConnectionIssues = useCallback(() => setConnectionIssues([]), []);
+
+  // Suppress unused-read lint warnings — written by event handlers, used for side effects
   void getConversationIssueSeverity;
-  void connectionIssues;
   void isAgentConnected;
   void connectionState;
 
@@ -396,60 +413,268 @@ export default function ConversationComponent({
 
   useClientEvent(client, 'token-privilege-will-expire', handleTokenWillExpire);
 
-  const stateLabel = agentState ? (AGENT_STATE_LABEL[agentState] ?? 'Ready') : 'Connecting…';
-  const langLabel  = LANGUAGE_LABELS[selectedLanguage] ?? selectedLanguage;
+  // Language switching handler
+  const handleLangChange = useCallback(
+    async (newLang: string) => {
+      if (!onChangeLanguage || newLang === currentLang || isLanguageSwitching) return;
+      setIsLanguageSwitching(true);
+      setCurrentLang(newLang); // optimistic update
+      try {
+        await onChangeLanguage(newLang);
+      } catch (err) {
+        console.error('[lang-switch]', err);
+        setCurrentLang(selectedLanguage); // revert on failure
+      } finally {
+        setIsLanguageSwitching(false);
+      }
+    },
+    [onChangeLanguage, currentLang, isLanguageSwitching, selectedLanguage],
+  );
+
+  const stateLabel = agentState ? (AGENT_STATE_LABEL[agentState] ?? 'Ready') : 'Connecting';
+  const langLabel  = LANGUAGE_LABELS[currentLang] ?? currentLang;
+
+  // Audio bar configs for center visualizer
+  const AUDIO_BARS = [
+    { h: 20, d: 0,   dur: 900 },
+    { h: 34, d: 120, dur: 750 },
+    { h: 46, d: 240, dur: 850 },
+    { h: 28, d: 360, dur: 700 },
+    { h: 42, d: 180, dur: 950 },
+    { h: 24, d: 300, dur: 800 },
+    { h: 38, d: 60,  dur: 720 },
+  ];
+
+  const centerStateText =
+    agentState === 'listening' ? 'Valsea is listening...' :
+    agentState === 'thinking'  ? 'Valsea is thinking...'  :
+    agentState === 'speaking'  ? 'Valsea is speaking...'  :
+    agentState                 ? 'Valsea is ready'        :
+                                 'Connecting...';
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="h-screen flex flex-col bg-[#080808] text-white overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#09061c', color: '#fff' }}>
       {/* Hidden remote users — keeps agent audio subscription alive */}
       {remoteUsers.map((user) => (
         <div key={user.uid} className="hidden"><RemoteUser user={user} /></div>
       ))}
 
-      {/* ── Header ────────────────────────────────────────────────────────── */}
-      <header className="flex items-center justify-between px-5 py-3 border-b border-white/5 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-red-600 flex items-center justify-center font-bold text-white text-sm select-none">
-            C
-          </div>
-          <div>
-            <p className="text-sm font-semibold leading-tight">CocaCola CX</p>
-            <p className="text-[10px] text-white/40 tracking-widest uppercase leading-tight">Voice Agent</p>
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <header
+        className="flex items-center justify-between px-6 py-3 shrink-0"
+        style={{ borderBottom: '1px solid rgba(122,86,170,0.2)' }}
+      >
+        <div className="flex items-center gap-2">
+          <Image
+            src="/valsea-logo.png"
+            alt="Valsea"
+            width={32}
+            height={32}
+            className="rounded-lg shrink-0"
+            priority
+          />
+          <span className="text-sm font-semibold tracking-tight">Voice Agent</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {isLanguageSwitching && (
+            <span className="flex items-center gap-1.5 text-[11px]" style={{ color: '#B89AE3' }}>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Switching…
+            </span>
+          )}
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide"
+            style={{
+              border: '1px solid rgba(122,86,170,0.35)',
+              backgroundColor: 'rgba(122,86,170,0.1)',
+              color: '#B89AE3',
+            }}
+          >
+            <span
+              className="w-2 h-2 rounded-full bg-green-400"
+              style={{ animation: 'pulse 2s ease-in-out infinite' }}
+            />
+            LIVE SESSION
           </div>
         </div>
-        <button
-          onClick={onEndConversation}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 text-xs font-medium hover:bg-red-500/20 transition-colors"
-          aria-label="End conversation"
-        >
-          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-          Connected
-        </button>
       </header>
 
-      {/* ── Two-panel main ────────────────────────────────────────────────── */}
+      {/* ── Three-column main ────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden min-h-0">
 
-        {/* Left: Transcript */}
-        <div className="flex-1 flex flex-col overflow-hidden p-5 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-red-500" />
-            <span className="text-sm font-semibold">Conversation</span>
+        {/* Left: Analysis panels + selectors */}
+        <div
+          className="w-[450px] flex flex-col shrink-0 overflow-y-auto overflow-hidden"
+          style={{ borderRight: '1px solid rgba(122,86,170,0.15)' }}
+        >
+          <div className="p-4 flex flex-col gap-3 flex-1">
+            <AnalysisPanel
+              prosody={prosody}
+              sentiment={sentiment}
+              isProsodyLoading={isProsodyLoading}
+              isSentimentLoading={isSentimentLoading}
+              isProsodyUnavailable={isProsodyUnavailable}
+              isSentimentUnavailable={isSentimentUnavailable}
+            />
           </div>
-          <p className="text-[10px] text-white/30 tracking-widest uppercase mb-4 shrink-0">
-            Live Transcript
-          </p>
 
-          <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
-            {/* Spacer pushes messages to the bottom — standard chat UX */}
-            <div className="flex-1" />
-            <div className="flex flex-col gap-3 pr-1">
+          {/* Language + Microphone selectors */}
+          {/* <div
+            className="p-4 flex flex-col gap-3 shrink-0"
+            style={{ borderTop: '1px solid rgba(122,86,170,0.12)' }}
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <span
+                  className="text-[9px] tracking-[0.18em] uppercase font-medium"
+                  style={{ color: 'rgba(255,255,255,0.28)' }}
+                >
+                  Language
+                </span>
+                {allowLanguageSwitching && onChangeLanguage ? (
+                  <select
+                    value={currentLang}
+                    onChange={(e) => handleLangChange(e.target.value)}
+                    disabled={isLanguageSwitching}
+                    className="h-9 rounded-md px-2 text-xs transition-colors duration-200 appearance-none focus:outline-none focus:ring-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      backgroundColor: 'rgba(122,86,170,0.1)',
+                      border: '1px solid rgba(122,86,170,0.25)',
+                      color: 'rgba(255,255,255,0.7)',
+                      // @ts-expect-error focus-ring
+                      '--tw-ring-color': '#7A56AA',
+                    }}
+                  >
+                    {VALSEA_LANGUAGES.map((opt) => (
+                      <option key={opt.code} value={opt.code} className="bg-[#120e28]">
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div
+                    className="h-9 px-3 rounded-md flex items-center text-xs truncate"
+                    style={{
+                      backgroundColor: 'rgba(122,86,170,0.08)',
+                      border: '1px solid rgba(122,86,170,0.18)',
+                      color: 'rgba(255,255,255,0.55)',
+                    }}
+                  >
+                    {langLabel}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span
+                  className="text-[9px] tracking-[0.18em] uppercase font-medium"
+                  style={{ color: 'rgba(255,255,255,0.28)' }}
+                >
+                  Microphone
+                </span>
+                <div className="h-9 flex items-center">
+                  <MicrophoneSelector localMicrophoneTrack={localMicrophoneTrack} />
+                </div>
+              </div>
+            </div>
+          </div> */}
+        </div>
+
+        {/* Center: Robot mascot + visualizer + status */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 relative overflow-hidden">
+          {/* Ambient purple glow */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                'radial-gradient(circle, transparent 35%, rgba(9,6,28,0.75) 58%, #09061c 75%)',
+            }}
+          />
+
+          {/* Robot image with edge vignette */}
+          <div className="relative z-10" style={{ width: 220, height: 220 }}>
+            <Image
+              src="/valsea-robot2.png"
+              alt="Valsea AI mascot"
+              width={220}
+              height={220}
+              style={{ objectFit: 'contain', mixBlendMode: 'screen' }} 
+              priority
+            />
+            {/* Radial fade to blend robot edges into dark background */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background:
+                  'radial-gradient(circle, transparent 42%, rgba(9,6,28,0.65) 65%, #09061c 80%)',
+              }}
+            />
+          </div>
+
+          {/* Audio bars visualizer */}
+          <div className="z-10 flex items-end gap-1.5" style={{ height: 50 }}>
+            {AUDIO_BARS.map((bar, i) => (
+              <div
+                key={i}
+                className="w-1.5 rounded-full"
+                style={{
+                  height: `${bar.h}px`,
+                  backgroundColor: '#7A56AA',
+                  transformOrigin: 'bottom',
+                  animation: agentState
+                    ? `audioBar ${bar.dur}ms ease-in-out ${bar.d}ms infinite`
+                    : 'none',
+                  opacity: agentState === 'listening' ? 0.85 : 0.3,
+                  transform: agentState ? undefined : 'scaleY(0.35)',
+                  transition: 'opacity 400ms ease',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Status text */}
+          <div className="z-10 text-center">
+            <p className="text-xl font-semibold tracking-tight">{centerStateText}</p>
+            <p className="text-sm mt-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              Processing real-time audio with low latency
+            </p>
+          </div>
+        </div>
+
+        {/* Right: Transcript */}
+        <div
+          className="w-[450px] flex flex-col shrink-0 overflow-hidden"
+          style={{ borderLeft: '1px solid rgba(122,86,170,0.15)' }}
+        >
+          {/* Transcript header */}
+          <div
+            className="flex items-center justify-between px-4 py-3 shrink-0"
+            style={{ borderBottom: '1px solid rgba(122,86,170,0.15)' }}
+          >
+            <span
+              className="text-[11px] font-semibold tracking-[0.2em] uppercase"
+              style={{ color: 'rgba(255,255,255,0.5)' }}
+            >
+              Transcript
+            </span>
+            <Clock className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.22)' }} />
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="flex flex-col p-4 gap-4 min-h-full">
+              <div className="flex-1" />
+
               {messageList.length === 0 && !currentInProgressMessage && (
                 <div className="flex items-center justify-center py-12">
-                  <p className="text-xs text-white/20 text-center">Waiting for Maya to speak…</p>
+                  <p className="text-xs text-center" style={{ color: 'rgba(255,255,255,0.18)' }}>
+                    Waiting for the conversation to begin…
+                  </p>
                 </div>
               )}
+
               {messageList.map((msg) => {
                 const isAgent = String(msg.uid) === agentUID;
                 const msgKey  = `${String(msg.uid)}-${msg.turn_id}`;
@@ -459,113 +684,197 @@ export default function ConversationComponent({
                 const ts      = msgTimestampsRef.current.get(msgKey)!;
                 const timeStr = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 return (
-                  <div key={msgKey} className={`flex flex-col gap-0.5 ${isAgent ? 'items-start' : 'items-end'}`}>
+                  <div key={msgKey} className={`flex flex-col gap-1.5 ${isAgent ? 'items-start' : 'items-end'}`}>
+                    <div className={`flex items-center gap-2 ${isAgent ? '' : 'flex-row-reverse'}`}>
+                      {isAgent ? (
+                        <span
+                          className="text-[10px] font-bold tracking-wider px-1.5 py-0.5 rounded"
+                          style={{ backgroundColor: '#7A56AA', color: '#fff' }}
+                        >
+                          VALSEA
+                        </span>
+                      ) : (
+                        <span
+                          className="text-[10px] font-medium tracking-wider"
+                          style={{ color: 'rgba(255,255,255,0.35)' }}
+                        >
+                          USER
+                        </span>
+                      )}
+                      <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.22)' }}>
+                        {timeStr}
+                      </span>
+                    </div>
                     <div
-                      className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                        isAgent
-                          ? 'bg-white/10 text-white/90 rounded-tl-sm'
-                          : 'bg-red-600 text-white rounded-tr-sm'
-                      }`}
+                      className="max-w-[90%] px-3 py-2.5 text-sm leading-relaxed"
+                      style={isAgent ? {
+                        backgroundColor: 'rgba(59,11,148,0.2)',
+                        border: '1px solid rgba(122,86,170,0.22)',
+                        borderRadius: '0.75rem',
+                        borderTopLeftRadius: '0.2rem',
+                        color: 'rgba(255,255,255,0.85)',
+                      } : {
+                        backgroundColor: '#7A56AA',
+                        borderRadius: '0.75rem',
+                        borderTopRightRadius: '0.2rem',
+                        color: '#fff',
+                      }}
                     >
                       {msg.text}
                     </div>
-                    <span className="text-[10px] text-white/25 px-1">{timeStr}</span>
                   </div>
                 );
               })}
 
               {currentInProgressMessage && (
-                <div className="flex flex-col items-start gap-0.5">
-                  <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white/10">
+                <div className="flex flex-col items-start gap-1.5">
+                  <span
+                    className="text-[10px] font-bold tracking-wider px-1.5 py-0.5 rounded"
+                    style={{ backgroundColor: '#7A56AA', color: '#fff' }}
+                  >
+                    VALSEA AI
+                  </span>
+                  <div
+                    className="px-3 py-2.5"
+                    style={{
+                      backgroundColor: 'rgba(59,11,148,0.2)',
+                      border: '1px solid rgba(122,86,170,0.22)',
+                      borderRadius: '0.75rem',
+                      borderTopLeftRadius: '0.2rem',
+                    }}
+                  >
                     <div className="flex gap-1.5 items-center h-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                      {[0, 150, 300].map((delay) => (
+                        <span
+                          key={delay}
+                          className="w-1.5 h-1.5 rounded-full animate-bounce"
+                          style={{ backgroundColor: '#B89AE3', animationDelay: `${delay}ms` }}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>
               )}
+
+              <div ref={transcriptEndRef} />
             </div>
-            <div ref={transcriptEndRef} />
           </div>
-        </div>
 
-        {/* Red vertical divider */}
-        <div className="w-px bg-red-600/50 self-stretch shrink-0" />
-
-        {/* Right: Controls */}
-        <div className="w-64 sm:w-72 flex flex-col shrink-0 overflow-y-auto">
-
-          {/* Mic / visualizer area */}
-          <div className="flex flex-col items-center justify-center gap-5 px-6 py-8 flex-1 min-h-[260px] overflow-visible">
-            {/* MicButtonWithVisualizer — zoomed to match previous large button size */}
-            <div style={{ zoom: 2.5 }} className="overflow-visible">
-              <MicButtonWithVisualizer
-                isEnabled={isEnabled}
-                setIsEnabled={setIsEnabled}
-                track={localMicrophoneTrack}
-                onToggle={handleMicToggle}
-                className="overflow-visible"
-                aria-label={isEnabled ? 'Mute microphone' : 'Unmute microphone'}
-                enabledColor="#dc2626"
-                disabledColor="#6b7280"
-              />
-            </div>
-
-            {/* Status */}
-            <div className="flex flex-col items-center gap-0.5">
-              <p className="text-xs font-semibold tracking-widest uppercase text-white/70">
-                {stateLabel}
-              </p>
-              <p className="text-xs text-white/30">{langLabel}</p>
-            </div>
-
-            {/* Stop button */}
-            <button
-              onClick={onEndConversation}
-              className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
-              aria-label="Stop conversation"
+          {/* Connection error cards */}
+          {connectionIssues.length > 0 && (
+            <div
+              className="p-3 flex flex-col gap-2 shrink-0"
+              style={{ borderTop: '1px solid rgba(122,86,170,0.12)' }}
             >
-              <Square className="w-4 h-4 text-red-400" />
-            </button>
-          </div>
+              <div className="flex items-center justify-between">
+                <span
+                  className="text-[9px] tracking-[0.18em] uppercase font-medium"
+                  style={{ color: 'rgba(255,255,255,0.28)' }}
+                >
+                  Agent Errors
+                </span>
+                <button
+                  onClick={clearConnectionIssues}
+                  className="text-[9px] transition-colors duration-200"
+                  style={{ color: 'rgba(255,255,255,0.28)' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.55)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.28)'; }}
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="flex flex-col gap-1.5 max-h-28 overflow-y-auto">
+                {connectionIssues.map((issue) => (
+                  <ConversationErrorCard key={issue.id} issue={issue} />
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* Language / Microphone / Model info */}
-          <div className="border-t border-white/5 p-4 flex flex-col gap-3 shrink-0">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[9px] text-white/30 tracking-widest uppercase">Language</span>
-                <div className="h-9 px-3 rounded-md bg-white/5 border border-white/10 flex items-center text-xs text-white/60 truncate">
-                  {langLabel}
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[9px] text-white/30 tracking-widest uppercase">Microphone</span>
-                <div className="h-9 flex items-center">
-                  <MicrophoneSelector localMicrophoneTrack={localMicrophoneTrack} />
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[9px] text-white/30 tracking-widest uppercase">Model</span>
-              <div className="h-9 px-3 rounded-md bg-white/5 border border-white/10 flex items-center text-xs text-white/60 truncate">
-                MiniMax Speech 2.8 Turbo
-              </div>
-            </div>
+          {/* Real-time enrichment footer */}
+          <div
+            className="px-4 py-2.5 shrink-0 flex items-center gap-2"
+            style={{
+              borderTop: '1px solid rgba(122,86,170,0.15)',
+              backgroundColor: 'rgba(122,86,170,0.06)',
+            }}
+          >
+            <span style={{ color: '#7A56AA', fontSize: 12 }}>✦</span>
+            <span
+              className="text-[10px] tracking-[0.15em] uppercase font-medium"
+              style={{ color: 'rgba(184,154,227,0.65)' }}
+            >
+              Real-Time Enrichment Active
+            </span>
           </div>
         </div>
       </div>
 
-      {/* ── Valsea analysis panels ────────────────────────────────────────── */}
-      <div className="border-t border-white/5 p-4 shrink-0 max-h-52 overflow-y-auto">
-        <AnalysisPanel
-          prosody={prosody}
-          sentiment={sentiment}
-          isProsodyLoading={isProsodyLoading}
-          isSentimentLoading={isSentimentLoading}
-          isProsodyUnavailable={isProsodyUnavailable}
-          isSentimentUnavailable={isSentimentUnavailable}
-        />
+      {/* ── Bottom control bar ────────────────────────────────────────────────── */}
+      <div
+        className="flex items-center justify-center gap-8 py-4 px-6 shrink-0"
+        style={{ borderTop: '1px solid rgba(122,86,170,0.2)' }}
+      >
+        {/* Mute toggle */}
+        <button
+          onClick={handleMicToggle}
+          className="flex flex-col items-center gap-1.5 transition-opacity duration-200"
+          aria-label={isEnabled ? 'Mute microphone' : 'Unmute microphone'}
+        >
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center transition-colors duration-200"
+            style={{
+              backgroundColor: isEnabled ? 'rgba(255,255,255,0.07)' : 'rgba(122,86,170,0.3)',
+              border: `1px solid ${isEnabled ? 'rgba(255,255,255,0.12)' : 'rgba(122,86,170,0.5)'}`,
+            }}
+          >
+            {isEnabled
+              ? <Mic    className="w-5 h-5" style={{ color: 'rgba(255,255,255,0.65)' }} />
+              : <MicOff className="w-5 h-5" style={{ color: '#B89AE3' }} />
+            }
+          </div>
+          <span
+            className="text-[10px] tracking-[0.15em] uppercase font-medium"
+            style={{ color: 'rgba(255,255,255,0.38)' }}
+          >
+            {isEnabled ? 'Mute' : 'Unmute'}
+          </span>
+        </button>
+
+        {/* End session */}
+        <button
+          onClick={onEndConversation}
+          className="flex items-center gap-2.5 px-8 py-3 ml-4 mb-2 rounded-full text-white font-semibold text-sm transition-colors duration-200"
+          style={{ backgroundColor: '#dc2626' }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#b91c1c'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#dc2626'; }}
+          aria-label="End conversation"
+        >
+          <PhoneOff className="w-4 h-4" />
+          End Session
+        </button>
+
+        {/* Microphone selector */}
+        <button
+          className="flex flex-col items-center gap-1.5"
+          aria-label="Microphone selector"
+        >
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.12)',
+            }}
+          >
+            <MicrophoneSelector localMicrophoneTrack={localMicrophoneTrack} />
+          </div>
+          <span
+            className="text-[10px] tracking-[0.15em] uppercase font-medium"
+            style={{ color: 'rgba(255,255,255,0.38)' }}
+          >
+            Microphone
+          </span>
+        </button>
       </div>
     </div>
   );
